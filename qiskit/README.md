@@ -27,3 +27,22 @@ Install the dependencies:
 ```shell
 pip install -r requirements.txt
 ```
+
+Execute the experiments:
+
+```shell
+python client.py
+```
+
+The dataset with experiments run at CNR-IIT can be downloaded with:
+
+```shell
+../scripts/download-artifacts.sh
+```
+
+To print basic stats:
+
+```shell
+python stats_single.py
+python stats_series.py
+```
