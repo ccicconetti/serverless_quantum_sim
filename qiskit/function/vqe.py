@@ -132,7 +132,7 @@ if __name__ == "__main__":
         initial_parameters = 2 * np.pi * np.random.rand(ansatz.num_parameters)
 
     ts_cur = time.perf_counter()
-    durations["init"] = ts_cur - ts_last
+    durations["run_init"] = ts_cur - ts_last
     ts_last = ts_cur
 
     pm = generate_preset_pass_manager(backend=backend, optimization_level=1)
@@ -140,7 +140,7 @@ if __name__ == "__main__":
     operator_isa = operator.apply_layout(ansatz_isa.layout)
 
     ts_cur = time.perf_counter()
-    durations["transpile"] = ts_cur - ts_last
+    durations["run_transpile"] = ts_cur - ts_last
     ts_last = ts_cur
 
     estimator = Estimator(backend=backend)

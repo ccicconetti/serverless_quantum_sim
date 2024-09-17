@@ -2,7 +2,6 @@
 # SPDX-License-Identifier: MIT
 
 from qiskit.circuit.library import EfficientSU2
-from random import choice
 
 from hamlib_read import read_openfermion_hdf5, get_hdf5_keys
 from qubitop_to_pauliop import qubitop_to_pauliop
@@ -11,9 +10,7 @@ HAM_FILENAME = "ham-graph-regular_reg-3.hdf5"
 LABELS = ["reg", "n", "rinst"]
 
 
-def random_dataset(datasets: list):
-    values = choice(datasets)
-    assert len(values) == len(LABELS)
+def dataset_name(values: list):
     fields = []
     for i in range(len(values)):
         value = values[i]
@@ -46,11 +43,9 @@ def get_datasets(max_qubits: int):
     return datasets
 
 
-def prepare_input(max_qubits: int):
+def prepare_input(dataset: str):
 
-    datasets = get_datasets(max_qubits)
-    dataset_name = random_dataset(datasets=datasets)
-    of = read_openfermion_hdf5(HAM_FILENAME, key=dataset_name)
+    of = read_openfermion_hdf5(HAM_FILENAME, key=dataset)
     operator = qubitop_to_pauliop(of)
 
     ansatz = EfficientSU2(operator.num_qubits)
