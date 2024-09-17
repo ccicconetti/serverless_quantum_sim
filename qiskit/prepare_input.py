@@ -55,7 +55,7 @@ def prepare_input(dataset: str):
         "operator": operator,
         "method": "COBYLA",
         "n_qubits": operator.num_qubits,
-        "dataset": dataset_name,
+        "dataset": dataset,
     }
 
     return input_arguments
