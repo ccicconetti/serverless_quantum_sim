@@ -3,14 +3,12 @@
 # https://github.com/Qiskit/qiskit-serverless
 
 
-from qiskit_serverless import ServerlessClient
 import os
 import time
 import logging
 import datetime
-from qiskit_serverless import QiskitFunction
-from prepare_input import prepare_input, prepare_input_example
-
+from qiskit_serverless import QiskitFunction, ServerlessClient
+from prepare_input import prepare_input
 
 logging.basicConfig(
     format="%(asctime)s.%(msecs)03d %(levelname)-8s %(message)s",
@@ -24,13 +22,15 @@ serverless = ServerlessClient(
 )
 
 function = QiskitFunction(
-    title="vqe", entrypoint="vqe.py", working_dir=".", dependencies=["qiskit_aer"]
+    title="vqe",
+    entrypoint="vqe.py",
+    working_dir="function",
+    dependencies=["qiskit_aer"],
 )
 
 serverless.upload(function)
 
 input_arguments = prepare_input(max_qubits=10)
-# input_arguments = prepare_input_example()
 
 logging.info("starting with input arguments: {}".format(input_arguments))
 
