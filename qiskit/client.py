@@ -1,0 +1,63 @@
+# Modified version of the example code provided by Qiskit serverless for VQE.
+# The original code is available on GitHub:
+# https://github.com/Qiskit/qiskit-serverless
+
+
+from qiskit_serverless import ServerlessClient
+import os
+import time
+import logging
+import datetime
+from qiskit_serverless import QiskitFunction
+from prepare_input import prepare_input, prepare_input_example
+
+
+logging.basicConfig(
+    format="%(asctime)s.%(msecs)03d %(levelname)-8s %(message)s",
+    level=logging.INFO,
+    datefmt="%Y-%m-%d %H:%M:%S",
+)
+
+serverless = ServerlessClient(
+    token=os.environ.get("GATEWAY_TOKEN", "awesome_token"),
+    host=os.environ.get("GATEWAY_HOST", "http://localhost:8000"),
+)
+
+function = QiskitFunction(
+    title="vqe", entrypoint="vqe.py", working_dir=".", dependencies=["qiskit_aer"]
+)
+
+serverless.upload(function)
+
+input_arguments = prepare_input(max_qubits=10)
+# input_arguments = prepare_input_example()
+
+logging.info("starting with input arguments: {}".format(input_arguments))
+
+job = serverless.run("vqe", arguments=input_arguments)
+logging.info("job ID: {}".format(job.job_id))
+
+timestamps = {}
+states = []
+
+while True:
+    status = job.status()
+    if status not in timestamps:
+        logging.info(status)
+        timestamps[status] = datetime.datetime.now()
+        states.append(status)
+    if status == "DONE":
+        break
+    elif status == "ERROR":
+        raise RuntimeError("the job could not be run")
+    time.sleep(0.01)
+
+for cur, next in zip(range(len(states) - 1), range(1, len(states))):
+    s_cur = states[cur]
+    s_next = states[next]
+    assert timestamps[s_next] >= timestamps[s_cur]
+    delta = timestamps[s_next] - timestamps[s_cur]
+    logging.info("state {} duration: {} s".format(s_cur, delta.total_seconds()))
+
+
+logging.info("finished with result: {}".format(job.result()))
