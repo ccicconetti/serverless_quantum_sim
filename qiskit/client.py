@@ -23,7 +23,7 @@ def dump_data(
 ):
     header = ""
     if not os.path.exists(OUTPUT_SINGLE) or os.path.getsize(OUTPUT_SINGLE) == 0:
-        header = "dataset,n_qubits,timestamp,optimized_total,num_iterations"
+        header = "dataset,n_qubits,timestamp,optimized_total,num_iterations,"
         header += ",".join(results["durations"].keys())
         header += ","
         header += ",".join(status_durations.keys())
