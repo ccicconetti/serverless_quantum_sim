@@ -169,7 +169,7 @@ impl JobFactory {
                         num_qubits
                     )
                 };
-                let num_operations_iter = if let Some(values) = self.pre_values.get(&num_qubits) {
+                let num_operations_iter = if let Some(values) = self.iter_values.get(&num_qubits) {
                     values.choose(&mut self.rng).unwrap()
                 } else {
                     anyhow::bail!(
@@ -177,7 +177,7 @@ impl JobFactory {
                         num_qubits
                     )
                 };
-                let num_operations_post = if let Some(values) = self.pre_values.get(&num_qubits) {
+                let num_operations_post = if let Some(values) = self.post_values.get(&num_qubits) {
                     values.choose(&mut self.rng).unwrap()
                 } else {
                     anyhow::bail!(
@@ -185,7 +185,7 @@ impl JobFactory {
                         num_qubits
                     )
                 };
-                let dur_qc_iteration = if let Some(values) = self.pre_values.get(&num_qubits) {
+                let dur_qc_iteration = if let Some(values) = self.dur_qc_values.get(&num_qubits) {
                     values.choose(&mut self.rng).unwrap()
                 } else {
                     anyhow::bail!(
@@ -193,14 +193,15 @@ impl JobFactory {
                         num_qubits
                     )
                 };
-                let num_iterations = if let Some(values) = self.pre_values.get(&num_qubits) {
-                    values.choose(&mut self.rng).unwrap()
-                } else {
-                    anyhow::bail!(
-                        "number of qubits not found in number of iterations trace: {}",
-                        num_qubits
-                    )
-                };
+                let num_iterations =
+                    if let Some(values) = self.num_iterations_values.get(&num_qubits) {
+                        values.choose(&mut self.rng).unwrap()
+                    } else {
+                        anyhow::bail!(
+                            "number of qubits not found in number of iterations trace: {}",
+                            num_qubits
+                        )
+                    };
 
                 Ok(Job {
                     job_type,
@@ -215,5 +216,36 @@ impl JobFactory {
                 })
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_job_factory() -> anyhow::Result<()> {
+        let mut jf = JobFactory::new(42).unwrap();
+        let num_qubits_choices = vec![4, 6, 8, 10];
+        let mut id = 0;
+        for i in 0..10 {
+            for num_qubits in &num_qubits_choices {
+                let job = jf.make(JobType::Vqe(*num_qubits), i).unwrap();
+                println!("{:?}", job);
+                assert!(job.num_operations_pre > 0);
+                assert!(job.num_operations_iter > 0);
+                assert!(job.num_operations_post > 0);
+                assert!(job.dur_qc_iteration > 0);
+                assert!(job.num_iterations > 0);
+                assert!(job.num_iterations < 1000000);
+                assert_eq!(i, job.time_arrival);
+                assert_eq!(id, job.job_id);
+                id += 1;
+            }
+        }
+
+        assert!(jf.make(JobType::Vqe(999), 0).is_err());
+
+        Ok(())
     }
 }
