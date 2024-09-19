@@ -14,11 +14,25 @@ df = df.select_dtypes(include="number")
 print(df.describe())
 
 columns = ["QUEUED", "INITIALIZING", "RUNNING", "num_iterations"]
-fig, ax = plt.subplots(1, len(columns), figsize=(10, 5))
-for i, column in zip(range(len(columns)), columns):
-    if column == "num_iterations":
-        ax[i].set_ylabel("Number of iterations")
-    else:
-        ax[i].set_ylabel("Time (s)")
-    df.boxplot(column=[column], by=["n_qubits"], ax=ax[i])
-plt.show()
+
+if os.environ.get("SAVE", "") == "":
+    fig, ax = plt.subplots(1, len(columns), figsize=(20, 5))
+    for i, column in zip(range(len(columns)), columns):
+        if column == "num_iterations":
+            ax[i].set_ylabel("Number of iterations")
+        else:
+            ax[i].set_ylabel("Time (s)")
+        df.boxplot(column=[column], by=["n_qubits"], ax=ax[i])
+    fig.suptitle("")
+    plt.show()
+
+else:
+    for i, column in zip(range(len(columns)), columns):
+        fig, ax = plt.subplots()
+        if column == "num_iterations":
+            ax.set_ylabel("Number of iterations")
+        else:
+            ax.set_ylabel("Time (s)")
+        df.boxplot(column=[column], by=["n_qubits"], ax=ax)
+        fig.suptitle("")
+        fig.savefig("{}.png".format(column))
