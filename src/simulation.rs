@@ -7,9 +7,9 @@ use rand_distr::Distribution;
 
 static GIGA: u64 = 1000000000;
 
-fn to_seconds(ns: u64) -> f64 {
-    ns as f64 / GIGA as f64
-}
+// fn to_seconds(ns: u64) -> f64 {
+//     ns as f64 / GIGA as f64
+// }
 
 fn to_nanoseconds(s: f64) -> u64 {
     (s * GIGA as f64).round() as u64
@@ -39,23 +39,29 @@ pub struct Output {
     pub config_csv: String,
 }
 
+/// For all the events there is the time when it is scheduled to occur.
 #[derive(PartialEq, Eq)]
 enum Event {
     /// A new job arrives.
-    /// 0: Event time.
     JobStart(u64),
     /// The warm-up period expires.
-    /// 0: Event time.
     WarmupPeriodEnd(u64),
     /// The simulation ends.
-    /// 0: Event time.
     ExperimentEnd(u64),
+    /// A quantum iteration ends.
+    QuantumIterationEnd(u64),
+    /// Update classical tasks.
+    UpdateClassicalTasks(u64),
 }
 
 impl Event {
     fn time(&self) -> u64 {
         match self {
-            Self::JobStart(t) | Self::WarmupPeriodEnd(t) | Self::ExperimentEnd(t) => *t,
+            Self::JobStart(t)
+            | Self::WarmupPeriodEnd(t)
+            | Self::ExperimentEnd(t)
+            | Self::QuantumIterationEnd(t)
+            | Self::UpdateClassicalTasks(t) => *t,
         }
     }
 }
@@ -86,9 +92,9 @@ pub struct Config {
     /// The capacity of each serverless worker, in operations/s.
     pub worker_capacity: u64,
     /// The number of serverless workers.
-    pub num_serverless_workers: u64,
+    pub num_serverless_workers: usize,
     /// The number of quantum computers.
-    pub num_quantum_computers: u64,
+    pub num_quantum_computers: usize,
 }
 
 impl Config {
@@ -114,8 +120,10 @@ pub struct Simulation {
     job_factory: crate::job::JobFactory,
     job_interarrival_rng: rand::rngs::StdRng,
     vqe_num_qubits_rng: rand::rngs::StdRng,
-    active_classical: Vec<crate::task::Task>,
-    active_quantum: Vec<crate::task::Task>,
+    active_jobs: std::collections::HashMap<u64, crate::job::Job>,
+    active_classical_tasks: Vec<crate::task::Task>,
+    pending_quantum_tasks: Vec<crate::task::Task>,
+    active_quantum_tasks: Vec<crate::task::Task>,
 
     // configuration
     config: Config,
@@ -139,8 +147,10 @@ impl Simulation {
             job_factory: crate::job::JobFactory::new(config.seed)?,
             job_interarrival_rng: rand::rngs::StdRng::seed_from_u64(next_seed()),
             vqe_num_qubits_rng: rand::rngs::StdRng::seed_from_u64(next_seed()),
-            active_classical: vec![],
-            active_quantum: vec![],
+            active_jobs: std::collections::HashMap::new(),
+            active_classical_tasks: vec![],
+            pending_quantum_tasks: vec![],
+            active_quantum_tasks: vec![],
             config,
         })
     }
@@ -156,11 +166,11 @@ impl Simulation {
         events.push(Event::ExperimentEnd(to_nanoseconds(self.config.duration)));
 
         // initialize simulated time and ID of the first job
-        let mut now = 0;
+        let mut now;
 
         // configure random variables for workload generation
         let job_interarrival_rv = rand_distr::Exp::new(1.0 / self.config.job_interarrival).unwrap();
-        let vqe_num_qubits_choices: Vec<usize> = vec![4, 6, 8, 10];
+        let vqe_num_qubits_choices: Vec<u16> = vec![4, 6, 8, 10];
 
         // simulation loop
         let real_now = std::time::Instant::now();
@@ -172,15 +182,25 @@ impl Simulation {
                     Event::JobStart(time_arrival) => {
                         assert_eq!(time_arrival, now);
                         // create a new job and draw randomly its lifetime
-                        let job = self.job_factory.make(
-                            crate::job::JobType::Vqe(
-                                *vqe_num_qubits_choices
-                                    .choose(&mut self.vqe_num_qubits_rng)
-                                    .unwrap(),
-                            ),
-                            now,
-                        );
+                        let num_qubits = *vqe_num_qubits_choices
+                            .choose(&mut self.vqe_num_qubits_rng)
+                            .unwrap();
+                        let job = self
+                            .job_factory
+                            .make(crate::job::JobType::Vqe(num_qubits), now);
                         log::debug!("A {} {:?}", now, job);
+
+                        // manage the job's initial task
+                        if let Ok(mut job) = job {
+                            if let Some(event) = self.manage_task(job.next_task(now)) {
+                                events.push(event);
+                            }
+
+                            // add the job the map of active ones
+                            self.active_jobs.insert(job.job_id, job);
+                        } else {
+                            log::warn!("error when creating a job with {} qubits", num_qubits);
+                        }
 
                         // schedule a new job
                         events.push(Event::JobStart(
@@ -196,6 +216,12 @@ impl Simulation {
                         log::debug!("E {}", now);
                         break 'main_loop;
                     }
+                    Event::QuantumIterationEnd(_) => {
+                        // XXX
+                    }
+                    Event::UpdateClassicalTasks(_) => {
+                        // XXX
+                    }
                 }
             }
         }
@@ -207,6 +233,26 @@ impl Simulation {
             single: OutputSingle { execution_time },
             series: OutputSeries { series },
             config_csv: self.config.to_csv(),
+        }
+    }
+
+    fn manage_task(&mut self, new_task: crate::task::Task) -> Option<Event> {
+        match &new_task.task_type {
+            crate::task::TaskType::Classical(_residual, last_update) => {
+                let event = Some(Event::UpdateClassicalTasks(*last_update));
+                self.active_classical_tasks.push(new_task);
+                event
+            }
+            crate::task::TaskType::Quantum(duration) => {
+                if self.active_quantum_tasks.len() < self.config.num_quantum_computers {
+                    let event = Some(Event::QuantumIterationEnd(*duration));
+                    self.active_quantum_tasks.push(new_task);
+                    event
+                } else {
+                    self.pending_quantum_tasks.push(new_task);
+                    None
+                }
+            }
         }
     }
 }

@@ -17,14 +17,14 @@ struct Args {
     #[arg(long, default_value_t = 1.0)]
     job_interarrival: f64,
     /// The capacity of each serverless worker, in operations/s
-    #[arg(long, default_value_t = 1000000)]
+    #[arg(long, default_value_t = 1000000000)]
     worker_capacity: u64,
     /// The number of serverless workers
     #[arg(long, default_value_t = 4)]
-    num_serverless_workers: u64,
+    num_serverless_workers: usize,
     /// The number of quantum computers
     #[arg(long, default_value_t = 2)]
-    num_quantum_computers: u64,
+    num_quantum_computers: usize,
     /// Initial seed to initialize the pseudo-random number generators
     #[arg(long, default_value_t = 0)]
     seed_init: u64,

@@ -1,23 +1,38 @@
 // SPDX-FileCopyrightText: © 2024 Claudio Cicconetti <c.cicconetti@iit.cnr.it>
 // SPDX-License-Identifier: MIT
 
-use rand::{distributions::Distribution, SeedableRng};
+use rand::seq::SliceRandom;
+use rand::SeedableRng;
+use rand_distr::Distribution;
+use std::io::BufRead;
 
 const MILLI_SECOND: u64 = 1000000000;
-const SECOND: u64 = MILLI_SECOND * 1000;
+const SECOND: u64 = 1000 * MILLI_SECOND;
 
 #[derive(Debug)]
 pub enum JobType {
-    /// Variational Quantum Eigensolver with variable number of qubits.
-    Vqe(usize),
+    /// Variational Quantum Eigensolver with variable number of qubits
+    /// read from traces.
+    Vqe(u16),
+}
+
+#[derive(Debug)]
+pub enum JobStatus {
+    Preparation,
+    ClassicalIteration(u64),
+    QuantumIteration(u64),
+    Postprocessing,
+    Completed,
 }
 
 #[derive(Debug)]
 pub struct Job {
     /// Job type.
     job_type: JobType,
+    /// Job status.
+    job_status: JobStatus,
     /// Numeric application identifier.
-    job_id: u64,
+    pub job_id: u64,
     /// Number of operations for the preparation phase.
     num_operations_pre: u64,
     /// Number of operations for each iteration.
@@ -32,22 +47,56 @@ pub struct Job {
     time_arrival: u64,
 }
 
+impl Job {
+    pub fn next_task(&mut self, cur_time: u64) -> crate::task::Task {
+        let task_type = match &self.job_status {
+            JobStatus::Preparation => {
+                self.job_status = JobStatus::ClassicalIteration(1);
+                crate::task::TaskType::Classical(self.num_operations_pre, cur_time)
+            }
+            JobStatus::ClassicalIteration(num_iteration) => {
+                self.job_status = JobStatus::QuantumIteration(*num_iteration);
+                crate::task::TaskType::Classical(self.num_operations_iter, cur_time)
+            }
+            JobStatus::QuantumIteration(num_iteration) => {
+                if *num_iteration == self.num_iterations {
+                    self.job_status = JobStatus::Postprocessing;
+                } else {
+                    self.job_status = JobStatus::ClassicalIteration(*num_iteration + 1);
+                }
+                crate::task::TaskType::Quantum(self.dur_qc_iteration)
+            }
+            JobStatus::Postprocessing => {
+                self.job_status = JobStatus::Completed;
+                crate::task::TaskType::Classical(self.num_operations_post, cur_time)
+            }
+            JobStatus::Completed => {
+                panic!("there is no next task for a completed job");
+            }
+        };
+        crate::task::Task {
+            job_id: self.job_id,
+            task_type,
+            start_time: cur_time,
+        }
+    }
+}
+
 pub struct JobFactory {
-    /// Random distribution to determine the number of iterations
-    rv_num_iterations: rand::distributions::Uniform<f64>,
-    /// Random distribution to determine the number of classical PRE operations
-    rv_num_operations_pre: rand::distributions::Uniform<f64>,
-    /// Random distribution to determine the number of classical operations
-    /// at each iteration
-    rv_num_operations_iter: rand::distributions::Uniform<f64>,
-    /// Random distribution to determine the number of classical POST operations
-    rv_num_operations_post: rand::distributions::Uniform<f64>,
-    /// Random distribution to determine the time to execute a QC iteration, in ns
-    rv_dur_qc_iteration: rand::distributions::Uniform<f64>,
     /// RNG
     rng: rand::rngs::StdRng,
     /// Next job ID.
     next_job_id: u64,
+    /// Possibile number of operations for the preparation phase.
+    pre_values: std::collections::HashMap<u16, Vec<u64>>,
+    /// Possibile number of operations for the iteration phase.
+    iter_values: std::collections::HashMap<u16, Vec<u64>>,
+    /// Possibile number of operations for the post-processing phase.
+    post_values: std::collections::HashMap<u16, Vec<u64>>,
+    /// Possibile durations of the QC iterations, in ns.
+    dur_qc_values: std::collections::HashMap<u16, Vec<u64>>,
+    /// Possibile number of iteration values.
+    num_iterations_values: std::collections::HashMap<u16, Vec<u64>>,
 }
 
 impl JobFactory {
@@ -55,63 +104,115 @@ impl JobFactory {
     /// Parameters:
     /// - `seed`: pseudo-random number generator seed
     pub fn new(seed: u64) -> anyhow::Result<Self> {
-        let rv_num_iterations = rand::distributions::uniform::Uniform::new(0_f64, 1_f64);
-        let rv_num_operations_pre = rand::distributions::uniform::Uniform::new(0_f64, 1_f64);
-        let rv_num_operations_iter = rand::distributions::uniform::Uniform::new(0_f64, 1_f64);
-        let rv_num_operations_post = rand::distributions::uniform::Uniform::new(0_f64, 1_f64);
-        let rv_dur_qc_iteration = rand::distributions::uniform::Uniform::new(0_f64, 1_f64);
-        let mut seed_cnt = 0_u64;
-        let mut next_seed = || {
-            seed_cnt += 1;
-            seed + 1000000 * seed_cnt
-        };
+        let pre_values = Self::read_from_file("input/pre.csv", SECOND as f64)?;
+        let iter_values = Self::read_from_file("input/cost_time.csv", SECOND as f64)?;
+        let post_values = Self::read_from_file("input/post.csv", SECOND as f64)?;
+        let dur_qc_values = Self::read_from_file("input/exec_time.csv", SECOND as f64)?;
+        let num_iterations_values = Self::read_from_file("input/num_iterations.csv", 1_f64)?;
 
         Ok(Self {
-            rv_num_iterations,
-            rv_num_operations_pre,
-            rv_num_operations_iter,
-            rv_num_operations_post,
-            rv_dur_qc_iteration,
-            rng: rand::rngs::StdRng::seed_from_u64(next_seed()),
+            rng: rand::rngs::StdRng::seed_from_u64(seed),
             next_job_id: 0,
+            pre_values,
+            iter_values,
+            post_values,
+            dur_qc_values,
+            num_iterations_values,
         })
+    }
+
+    fn read_from_file(
+        filename: &str,
+        multiplier: f64,
+    ) -> anyhow::Result<std::collections::HashMap<u16, Vec<u64>>> {
+        let mut res = std::collections::HashMap::new();
+
+        let file = std::fs::File::open(filename)?;
+        let reader = std::io::BufReader::new(file);
+
+        for line in reader.lines() {
+            if let Ok(line) = line {
+                let tokens = line.split(',').collect::<Vec<&str>>();
+                anyhow::ensure!(
+                    tokens.len() == 2,
+                    "invalid line from file '{}': {}",
+                    filename,
+                    line
+                );
+                if let (Ok(num_qubits), Ok(value)) =
+                    (tokens[0].parse::<u16>(), tokens[1].parse::<f64>())
+                {
+                    res.entry(num_qubits)
+                        .or_insert(vec![])
+                        .push((value * multiplier).round() as u64);
+                }
+            }
+        }
+        Ok(res)
     }
 
     /// Create a new random job.
     /// Parameters:
     /// - `job_type`: the job type
     /// - `time_arrival`: the time of arrival of this job, in ns
-    pub fn make(&mut self, job_type: JobType, time_arrival: u64) -> Job {
+    pub fn make(&mut self, job_type: JobType, time_arrival: u64) -> anyhow::Result<Job> {
         let id = self.next_job_id;
         self.next_job_id += 1;
 
-        let to_u64 = |x: f64, a: u64, b: u64| a + ((b - a) as f64 * x) as u64;
-
         match job_type {
             JobType::Vqe(num_qubits) => {
-                let num_operations_pre =
-                    to_u64(self.rv_num_operations_pre.sample(&mut self.rng), 100, 1000);
-                let num_operations_iter =
-                    to_u64(self.rv_num_operations_iter.sample(&mut self.rng), 100, 1000);
-                let num_operations_post =
-                    to_u64(self.rv_num_operations_post.sample(&mut self.rng), 100, 1000);
-                let dur_qc_iteration = to_u64(
-                    self.rv_dur_qc_iteration.sample(&mut self.rng),
-                    MILLI_SECOND,
-                    10 * MILLI_SECOND,
-                );
-                let num_iterations = to_u64(self.rv_num_iterations.sample(&mut self.rng), 10, 100);
+                let num_operations_pre = if let Some(values) = self.pre_values.get(&num_qubits) {
+                    values.choose(&mut self.rng).unwrap()
+                } else {
+                    anyhow::bail!(
+                        "number of qubits not found in preparation phase trace: {}",
+                        num_qubits
+                    )
+                };
+                let num_operations_iter = if let Some(values) = self.pre_values.get(&num_qubits) {
+                    values.choose(&mut self.rng).unwrap()
+                } else {
+                    anyhow::bail!(
+                        "number of qubits not found in classical iteration trace: {}",
+                        num_qubits
+                    )
+                };
+                let num_operations_post = if let Some(values) = self.pre_values.get(&num_qubits) {
+                    values.choose(&mut self.rng).unwrap()
+                } else {
+                    anyhow::bail!(
+                        "number of qubits not found in post-processing phase trace: {}",
+                        num_qubits
+                    )
+                };
+                let dur_qc_iteration = if let Some(values) = self.pre_values.get(&num_qubits) {
+                    values.choose(&mut self.rng).unwrap()
+                } else {
+                    anyhow::bail!(
+                        "number of qubits not found in QC execution trace: {}",
+                        num_qubits
+                    )
+                };
+                let num_iterations = if let Some(values) = self.pre_values.get(&num_qubits) {
+                    values.choose(&mut self.rng).unwrap()
+                } else {
+                    anyhow::bail!(
+                        "number of qubits not found in number of iterations trace: {}",
+                        num_qubits
+                    )
+                };
 
-                Job {
+                Ok(Job {
                     job_type,
+                    job_status: JobStatus::Preparation,
                     job_id: id,
-                    num_operations_pre,
-                    num_operations_iter,
-                    num_operations_post,
-                    dur_qc_iteration,
-                    num_iterations,
+                    num_operations_pre: *num_operations_pre,
+                    num_operations_iter: *num_operations_iter,
+                    num_operations_post: *num_operations_post,
+                    dur_qc_iteration: *dur_qc_iteration,
+                    num_iterations: *num_iterations,
                     time_arrival,
-                }
+                })
             }
         }
     }
