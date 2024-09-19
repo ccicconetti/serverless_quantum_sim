@@ -1,0 +1,30 @@
+# SPDX-FileCopyrightText: © 2024 Claudio Cicconetti <c.cicconetti@iit.cnr.it>
+# SPDX-License-Identifier: MIT
+
+[package]
+name = "serverless_quantum_sim"
+version = "0.1.0"
+authors = ["Claudio Cicconetti <c.cicconetti@iit.cnr.it>"]
+edition = "2021"
+license-file = "LICENSE"
+description = "Simulator of the execution of VQE applications in a hybrid classical-quantum computing infrastructure following a serverless approach"
+repository = "https://github.com/ccicconetti/serverless_quantum_sim"
+readme = "README.md"
+
+[lib]
+name = "serverless_quantum_sim"
+path = "src/lib.rs"
+
+[[bin]]
+name = "serverless_quantum_sim"
+path = "src/bin/main.rs"
+
+[dependencies]
+anyhow = "1.0"
+clap = { version = "4.3", features=["derive"] }
+env_logger = "0.11.2"
+futures = "0.3.30"
+log = "0.4.20"
+rand = "0.8.5"
+rand_distr = "0.4.3"
+tokio = { version = "1", features = ["full"] }
