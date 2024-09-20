@@ -107,7 +107,7 @@ impl OutputSingle {
     pub fn enable(&mut self, now: u64) {
         self.enabled = true;
         self.warmup = now;
-        for (_, elem) in &mut self.time_avg {
+        for elem in &mut self.time_avg.values_mut() {
             elem.last_update = now;
         }
     }
@@ -119,6 +119,12 @@ impl OutputSingle {
             entry.sum_time += delta;
             entry.last_update = now;
         }
+    }
+}
+
+impl Default for OutputSingle {
+    fn default() -> Self {
+        Self::new()
     }
 }
 

@@ -131,22 +131,20 @@ impl JobFactory {
         let file = std::fs::File::open(filename)?;
         let reader = std::io::BufReader::new(file);
 
-        for line in reader.lines() {
-            if let Ok(line) = line {
-                let tokens = line.split(',').collect::<Vec<&str>>();
-                anyhow::ensure!(
-                    tokens.len() == 2,
-                    "invalid line from file '{}': {}",
-                    filename,
-                    line
-                );
-                if let (Ok(num_qubits), Ok(value)) =
-                    (tokens[0].parse::<u16>(), tokens[1].parse::<f64>())
-                {
-                    res.entry(num_qubits)
-                        .or_insert(vec![])
-                        .push((value * multiplier).round() as u64);
-                }
+        for line in reader.lines().map_while(Result::ok) {
+            let tokens = line.split(',').collect::<Vec<&str>>();
+            anyhow::ensure!(
+                tokens.len() == 2,
+                "invalid line from file '{}': {}",
+                filename,
+                line
+            );
+            if let (Ok(num_qubits), Ok(value)) =
+                (tokens[0].parse::<u16>(), tokens[1].parse::<f64>())
+            {
+                res.entry(num_qubits)
+                    .or_insert(vec![])
+                    .push((value * multiplier).round() as u64);
             }
         }
         Ok(res)
