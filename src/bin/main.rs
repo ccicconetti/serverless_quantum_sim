@@ -14,10 +14,10 @@ struct Args {
     #[arg(long, default_value_t = 30_f64)]
     warmup_period: f64,
     /// Average inter-arrival between consecutive jobs, in s
-    #[arg(long, default_value_t = 1.0)]
+    #[arg(long, default_value_t = 60.0)]
     job_interarrival: f64,
     /// The capacity of each serverless worker, in operations/s
-    #[arg(long, default_value_t = 1000000000)]
+    #[arg(long, default_value_t = 1_000_000_000_u64)]
     worker_capacity: u64,
     /// The number of serverless workers
     #[arg(long, default_value_t = 4)]
@@ -25,6 +25,9 @@ struct Args {
     /// The number of quantum computers
     #[arg(long, default_value_t = 2)]
     num_quantum_computers: usize,
+    /// The job type
+    #[arg(long, default_value_t = String::from("VQE;4;6;8;10"))]
+    job_type: String,
     /// Initial seed to initialize the pseudo-random number generators
     #[arg(long, default_value_t = 0)]
     seed_init: u64,
@@ -46,6 +49,30 @@ struct Args {
     /// Header of additional fields recorded in the CSV output file.
     #[arg(long, default_value_t = String::from(""))]
     additional_header: String,
+}
+
+fn open_output_file(
+    path: &str,
+    filename: &str,
+    append: bool,
+    header: &str,
+) -> anyhow::Result<std::fs::File> {
+    let output_single_filename = format!("{}{}", path, filename);
+    let add_header = !append
+        || match std::fs::metadata(&output_single_filename) {
+            Ok(metadata) => metadata.len() == 0,
+            Err(_) => true,
+        };
+    let mut f = std::fs::OpenOptions::new()
+        .write(true)
+        .append(append)
+        .create(true)
+        .truncate(!append)
+        .open(output_single_filename)?;
+    if add_header {
+        writeln!(&mut f, "{}", header)?;
+    }
+    Ok(f)
 }
 
 #[tokio::main]
@@ -73,6 +100,7 @@ async fn main() -> anyhow::Result<()> {
                 worker_capacity: args.worker_capacity,
                 num_serverless_workers: args.num_serverless_workers,
                 num_quantum_computers: args.num_quantum_computers,
+                job_type: args.job_type.clone(),
             });
     }
 
@@ -108,37 +136,49 @@ async fn main() -> anyhow::Result<()> {
     }
 
     // save output to files
-    let output_single_filename = format!("{}single.csv", args.output_path);
-    let header = !args.append
-        || match std::fs::metadata(&output_single_filename) {
-            Ok(metadata) => metadata.len() == 0,
-            Err(_) => true,
-        };
-    let mut f = std::fs::OpenOptions::new()
-        .write(true)
-        .append(args.append)
-        .create(true)
-        .truncate(!args.append)
-        .open(output_single_filename)?;
-
-    if header {
-        writeln!(
-            &mut f,
+    assert!(!outputs.is_empty());
+    let mut single_file = open_output_file(
+        &args.output_path,
+        "single.csv",
+        args.append,
+        format!(
             "{}{},{}",
             args.additional_header,
             serverless_quantum_sim::simulation::Config::header(),
-            serverless_quantum_sim::simulation::OutputSingle::header()
-        )?;
-    }
+            outputs.first().unwrap().single.header()
+        )
+        .as_str(),
+    )?;
 
     for output in outputs {
         writeln!(
-            &mut f,
+            &mut single_file,
             "{}{},{}",
             args.additional_fields,
             output.config_csv,
             output.single.to_csv()
         )?;
+
+        for (name, values) in output.series.series {
+            let mut series_file = open_output_file(
+                &args.output_path,
+                format!("{}.csv", name).as_str(),
+                args.append,
+                format!(
+                    "{}{},value",
+                    args.additional_header,
+                    serverless_quantum_sim::simulation::Config::header(),
+                )
+                .as_str(),
+            )?;
+            for value in values {
+                writeln!(
+                    &mut series_file,
+                    "{}{},{}",
+                    args.additional_fields, output.config_csv, value
+                )?;
+            }
+        }
     }
 
     Ok(())

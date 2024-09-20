@@ -3,10 +3,8 @@
 
 #[derive(Debug, Clone, Copy)]
 pub enum TaskType {
-    /// Classical task, with specified:
-    /// - residual number of operations;
-    /// - last update time.
-    Classical(u64, u64),
+    /// Classical task, with specified residual number of operations.
+    Classical(u64),
     /// Quantum task, with specified residual time of execution, in ns.
     Quantum(u64),
 }
@@ -19,4 +17,6 @@ pub struct Task {
     pub task_type: TaskType,
     /// Start time, in ns.
     pub start_time: u64,
+    /// Last update time, in ns.
+    pub last_update: u64,
 }

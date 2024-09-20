@@ -3,11 +3,10 @@
 
 use rand::seq::SliceRandom;
 use rand::SeedableRng;
-use rand_distr::Distribution;
 use std::io::BufRead;
 
-const MILLI_SECOND: u64 = 1000000000;
-const SECOND: u64 = 1000 * MILLI_SECOND;
+const MILLISECOND: u64 = 1_000_000;
+const SECOND: u64 = 1_000 * MILLISECOND;
 
 #[derive(Debug)]
 pub enum JobType {
@@ -27,6 +26,7 @@ pub enum JobStatus {
 
 #[derive(Debug)]
 pub struct Job {
+    #[allow(dead_code)]
     /// Job type.
     job_type: JobType,
     /// Job status.
@@ -44,19 +44,19 @@ pub struct Job {
     /// Number of iterations.
     num_iterations: u64,
     /// Arrival time, in ns.
-    time_arrival: u64,
+    pub time_arrival: u64,
 }
 
 impl Job {
-    pub fn next_task(&mut self, cur_time: u64) -> crate::task::Task {
+    pub fn next_task(&mut self, cur_time: u64) -> Option<crate::task::Task> {
         let task_type = match &self.job_status {
             JobStatus::Preparation => {
                 self.job_status = JobStatus::ClassicalIteration(1);
-                crate::task::TaskType::Classical(self.num_operations_pre, cur_time)
+                crate::task::TaskType::Classical(self.num_operations_pre)
             }
             JobStatus::ClassicalIteration(num_iteration) => {
                 self.job_status = JobStatus::QuantumIteration(*num_iteration);
-                crate::task::TaskType::Classical(self.num_operations_iter, cur_time)
+                crate::task::TaskType::Classical(self.num_operations_iter)
             }
             JobStatus::QuantumIteration(num_iteration) => {
                 if *num_iteration == self.num_iterations {
@@ -68,17 +68,18 @@ impl Job {
             }
             JobStatus::Postprocessing => {
                 self.job_status = JobStatus::Completed;
-                crate::task::TaskType::Classical(self.num_operations_post, cur_time)
+                crate::task::TaskType::Classical(self.num_operations_post)
             }
             JobStatus::Completed => {
-                panic!("there is no next task for a completed job");
+                return None;
             }
         };
-        crate::task::Task {
+        Some(crate::task::Task {
             job_id: self.job_id,
             task_type,
             start_time: cur_time,
-        }
+            last_update: cur_time,
+        })
     }
 }
 
