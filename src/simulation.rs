@@ -173,6 +173,8 @@ enum Event {
     WarmupPeriodEnd(u64),
     /// The simulation ends.
     ExperimentEnd(u64),
+    /// Print progress.
+    Progress(u64, u16),
     /// A quantum iteration ends.
     QuantumIterationEnd(u64),
     /// Update classical tasks.
@@ -185,6 +187,7 @@ impl Event {
             Self::JobStart(t)
             | Self::WarmupPeriodEnd(t)
             | Self::ExperimentEnd(t)
+            | Self::Progress(t, _)
             | Self::QuantumIterationEnd(t)
             | Self::UpdateClassicalTasks(t) => *t,
         }
@@ -220,17 +223,21 @@ pub struct Config {
     pub num_serverless_workers: usize,
     /// The number of quantum computers.
     pub num_quantum_computers: usize,
+    /// The maximum queue length for classical tasks.
+    pub max_classical_tasks: usize,
+    /// The maximum queue length for quantum tasks.
+    pub max_quantum_tasks: usize,
     /// The job type.
     pub job_type: String,
 }
 
 impl Config {
     pub fn header() -> String {
-        "seed,duration,job_interarrival,warmup_period,worker_capacity,num_serverless_workers,num_quantum_computers,job_type".to_string()
+        "seed,duration,job_interarrival,warmup_period,worker_capacity,num_serverless_workers,num_quantum_computers,max_classical_tasks,max_quantum_tasks,job_type".to_string()
     }
     pub fn to_csv(&self) -> String {
         format!(
-            "{},{},{},{},{},{},{},{}",
+            "{},{},{},{},{},{},{},{},{},{}",
             self.seed,
             self.duration,
             self.job_interarrival,
@@ -238,6 +245,8 @@ impl Config {
             self.worker_capacity,
             self.num_serverless_workers,
             self.num_quantum_computers,
+            self.max_classical_tasks,
+            self.max_quantum_tasks,
             self.job_type
         )
     }
@@ -315,12 +324,22 @@ impl Simulation {
             self.config.warmup_period,
         )));
         events.push(Event::ExperimentEnd(to_nanoseconds(self.config.duration)));
+        for i in 1..100 {
+            events.push(Event::Progress(
+                to_nanoseconds(i as f64 * self.config.duration / 100.0),
+                i,
+            ));
+        }
 
         // initialize simulated time and ID of the first job
         let mut now;
 
         // configure random variables for workload generation
         let job_interarrival_rv = rand_distr::Exp::new(1.0 / self.config.job_interarrival).unwrap();
+
+        // metrics
+        let mut num_job_accepted = 0;
+        let mut num_job_dropped = 0;
 
         // simulation loop
         let real_now = std::time::Instant::now();
@@ -330,28 +349,36 @@ impl Simulation {
                 match event {
                     Event::JobStart(time_arrival) => {
                         assert_eq!(time_arrival, now);
-                        // create a new job and draw randomly its lifetime
-                        let num_qubits = self
-                            .num_qubits
-                            .choose(&mut self.vqe_num_qubits_rng)
-                            .unwrap();
-                        let job = self
-                            .job_factory
-                            .make(crate::job::JobType::Vqe(*num_qubits), now);
-                        log::debug!("A {} {:?}", now, job);
 
-                        // manage the job's initial task
-                        if let Ok(mut job) = job {
-                            if let Some(event) =
-                                self.manage_task(now, job.next_task(now).unwrap(), &mut single)
-                            {
-                                events.push(event);
+                        if self.active_classical_tasks.len() < self.config.max_classical_tasks
+                            && self.pending_quantum_tasks.len() < self.config.max_quantum_tasks
+                        {
+                            // create a new job and draw randomly its lifetime
+                            let num_qubits = self
+                                .num_qubits
+                                .choose(&mut self.vqe_num_qubits_rng)
+                                .unwrap();
+                            let job = self
+                                .job_factory
+                                .make(crate::job::JobType::Vqe(*num_qubits), now);
+                            log::debug!("A {} {:?}", now, job);
+
+                            // manage the job's initial task
+                            if let Ok(mut job) = job {
+                                if let Some(event) =
+                                    self.manage_task(now, job.next_task(now).unwrap(), &mut single)
+                                {
+                                    events.push(event);
+                                }
+
+                                // add the job the map of active ones
+                                self.active_jobs.insert(job.job_id, job);
+                            } else {
+                                log::warn!("error when creating a job with {} qubits", num_qubits);
                             }
-
-                            // add the job the map of active ones
-                            self.active_jobs.insert(job.job_id, job);
+                            num_job_accepted += 1;
                         } else {
-                            log::warn!("error when creating a job with {} qubits", num_qubits);
+                            num_job_dropped += 1;
                         }
 
                         // schedule a new job
@@ -369,6 +396,15 @@ impl Simulation {
                     Event::ExperimentEnd(_) => {
                         log::debug!("E {}", now);
                         break 'main_loop;
+                    }
+                    Event::Progress(_, percentage) => {
+                        assert!(
+                            self.active_jobs.len()
+                                == (self.active_classical_tasks.len()
+                                    + self.active_quantum_tasks.len()
+                                    + self.pending_quantum_tasks.len())
+                        );
+                        log::info!("completed {}% ({} active jobs, {} classical tasks, {}/{} quantum tasks", percentage, self.active_jobs.len(), self.active_classical_tasks.len(), self.active_quantum_tasks.len(), self.pending_quantum_tasks.len());
                     }
                     Event::QuantumIterationEnd(_) => {
                         self.log_internals("Q", now);
@@ -523,6 +559,8 @@ impl Simulation {
 
         // save final metrics
         single.one_time("execution_time", real_now.elapsed().as_secs_f64());
+        single.one_time("num_job_accepted", num_job_accepted as f64);
+        single.one_time("num_job_dropped", num_job_dropped as f64);
 
         // return the simulation output
         Output {
@@ -533,6 +571,9 @@ impl Simulation {
     }
 
     fn log_internals(&self, hdr: &str, now: u64) {
+        if !log::log_enabled!(log::Level::Debug) {
+            return;
+        }
         log::debug!("{} {} active jobs {:?}", hdr, now, self.active_jobs);
         log::debug!(
             "{} {} classical tasks {:?}",

@@ -25,6 +25,12 @@ struct Args {
     /// The number of quantum computers
     #[arg(long, default_value_t = 2)]
     num_quantum_computers: usize,
+    /// The maximum queue length for classical tasks
+    #[arg(long, default_value_t = 50)]
+    max_classical_tasks: usize,
+    /// The maximum queue length for quantum tasks
+    #[arg(long, default_value_t = 50)]
+    max_quantum_tasks: usize,
     /// The job type
     #[arg(long, default_value_t = String::from("VQE;4;6;8;10"))]
     job_type: String,
@@ -100,6 +106,8 @@ async fn main() -> anyhow::Result<()> {
                 worker_capacity: args.worker_capacity,
                 num_serverless_workers: args.num_serverless_workers,
                 num_quantum_computers: args.num_quantum_computers,
+                max_classical_tasks: args.max_classical_tasks,
+                max_quantum_tasks: args.max_quantum_tasks,
                 job_type: args.job_type.clone(),
             });
     }
