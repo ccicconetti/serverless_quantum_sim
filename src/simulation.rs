@@ -133,6 +133,12 @@ pub struct OutputSeries {
     pub series: std::collections::HashMap<String, Vec<f64>>,
 }
 
+impl Default for OutputSeries {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl OutputSeries {
     pub fn new() -> Self {
         Self {
@@ -145,7 +151,7 @@ impl OutputSeries {
         if self.enabled {
             self.series
                 .entry(name.to_string())
-                .or_insert(vec![])
+                .or_default()
                 .push(value);
         }
     }
@@ -263,7 +269,7 @@ impl Simulation {
             "vanishing avg job interarrival time"
         );
 
-        let mut tokens = config.job_type.split(";").clone().collect::<Vec<&str>>();
+        let mut tokens = config.job_type.split(';').clone().collect::<Vec<&str>>();
         anyhow::ensure!(!tokens.is_empty(), "invalid empty job type");
         anyhow::ensure!(tokens[0].to_ascii_lowercase() == "vqe", "invalid job type");
         anyhow::ensure!(
@@ -453,11 +459,7 @@ impl Simulation {
                         let mut residuals = vec![];
                         let mut finished_tasks_start_times = vec![];
                         let mut finished_task_job_ids = std::collections::HashSet::new();
-                        let capacity_ratio = if let Some(capacity) = capacity {
-                            Some(capacity as f64 / 1e9_f64)
-                        } else {
-                            None
-                        };
+                        let capacity_ratio = capacity.map(|capacity| capacity as f64 / 1e9_f64);
                         for task in &mut self.active_classical_tasks {
                             let num_ops = if let Some(capacity_ratio) = capacity_ratio {
                                 ((now - task.last_update) as f64 * capacity_ratio).round() as u64
@@ -627,8 +629,8 @@ mod tests {
 
     #[test]
     fn test_time_avg() -> anyhow::Result<()> {
-        let warmups = vec![0, 5];
-        let expected_values = vec![1.9, 2.0];
+        let warmups = [0, 5];
+        let expected_values = [1.9, 2.0];
         for (warmup, expected_value) in warmups.iter().zip(expected_values.iter()) {
             let mut single = OutputSingle::new();
             single.enable(*warmup);
