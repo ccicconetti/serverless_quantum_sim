@@ -113,7 +113,7 @@ impl OutputSingle {
     }
 
     pub fn finish(&mut self, now: u64) {
-        for (_, entry) in &mut self.time_avg {
+        for entry in &mut self.time_avg.values_mut() {
             let delta = (now - entry.last_update) as f64;
             entry.sum_values += delta * entry.last_value;
             entry.sum_time += delta;
@@ -149,10 +149,7 @@ impl OutputSeries {
 
     pub fn add(&mut self, name: &str, value: f64) {
         if self.enabled {
-            self.series
-                .entry(name.to_string())
-                .or_default()
-                .push(value);
+            self.series.entry(name.to_string()).or_default().push(value);
         }
     }
 
