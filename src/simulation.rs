@@ -333,15 +333,11 @@ impl Simulation {
 
                         // manage the job's initial task
                         if let Ok(mut job) = job {
-                            if let Some(event) = self.manage_task(now, job.next_task(now).unwrap())
+                            if let Some(event) =
+                                self.manage_task(now, job.next_task(now).unwrap(), &mut single)
                             {
                                 events.push(event);
                             }
-                            single.time_avg(
-                                "active_quantum_tasks",
-                                now,
-                                self.active_quantum_tasks.len() as f64,
-                            );
 
                             // add the job the map of active ones
                             self.active_jobs.insert(job.job_id, job);
@@ -389,8 +385,12 @@ impl Simulation {
                         );
                         series.add("qc_iter_dur", to_seconds(now - completed_task.start_time));
 
-                        let new_task_res =
-                            self.new_task_for_job(now, completed_task.job_id, &mut series);
+                        let new_task_res = self.new_task_for_job(
+                            now,
+                            completed_task.job_id,
+                            &mut series,
+                            &mut single,
+                        );
                         if new_task_res.0 {
                             let res = self.active_jobs.remove(&completed_task.job_id);
                             assert!(res.is_some());
@@ -407,6 +407,11 @@ impl Simulation {
                                 events.push(Event::QuantumIterationEnd(now + duration));
                             }
                             self.active_quantum_tasks.push(new_task);
+                            single.time_avg(
+                                "pending_quantum_tasks",
+                                now,
+                                self.pending_quantum_tasks.len() as f64,
+                            );
                             single.time_avg(
                                 "active_quantum_tasks",
                                 now,
@@ -487,11 +492,17 @@ impl Simulation {
                         // remove the completed tasks from the active set
                         self.active_classical_tasks
                             .retain(|x| !finished_task_job_ids.contains(&x.job_id));
+                        single.time_avg(
+                            "active_classical_tasks",
+                            now,
+                            self.active_classical_tasks.len() as f64,
+                        );
 
                         // for all jobs that are still active, schedule the
                         // next task, otherwise remove the job from the active set
                         for job_id in &finished_task_job_ids {
-                            let new_task_res = self.new_task_for_job(now, *job_id, &mut series);
+                            let new_task_res =
+                                self.new_task_for_job(now, *job_id, &mut series, &mut single);
                             if new_task_res.0 {
                                 let res = self.active_jobs.remove(job_id);
                                 assert!(res.is_some());
@@ -545,30 +556,51 @@ impl Simulation {
         now: u64,
         job_id: u64,
         series: &mut OutputSeries,
+        single: &mut OutputSingle,
     ) -> (bool, Option<Event>) {
         let job = self.active_jobs.get_mut(&job_id).unwrap();
         if let Some(new_task) = job.next_task(now) {
-            (false, self.manage_task(now, new_task))
+            (false, self.manage_task(now, new_task, single))
         } else {
             series.add("job_time", to_seconds(now - job.time_arrival));
             (true, None)
         }
     }
 
-    fn manage_task(&mut self, now: u64, new_task: crate::task::Task) -> Option<Event> {
+    fn manage_task(
+        &mut self,
+        now: u64,
+        new_task: crate::task::Task,
+        single: &mut OutputSingle,
+    ) -> Option<Event> {
         match &new_task.task_type {
             crate::task::TaskType::Classical(_residual) => {
                 let event = Some(Event::UpdateClassicalTasks(now));
                 self.active_classical_tasks.push(new_task);
+                single.time_avg(
+                    "active_classical_tasks",
+                    now,
+                    self.active_classical_tasks.len() as f64,
+                );
                 event
             }
             crate::task::TaskType::Quantum(duration) => {
                 if self.active_quantum_tasks.len() < self.config.num_quantum_computers {
                     let event = Some(Event::QuantumIterationEnd(now + *duration));
                     self.active_quantum_tasks.push(new_task);
+                    single.time_avg(
+                        "active_quantum_tasks",
+                        now,
+                        self.active_quantum_tasks.len() as f64,
+                    );
                     event
                 } else {
                     self.pending_quantum_tasks.push(new_task);
+                    single.time_avg(
+                        "pending_quantum_tasks",
+                        now,
+                        self.pending_quantum_tasks.len() as f64,
+                    );
                     None
                 }
             }
