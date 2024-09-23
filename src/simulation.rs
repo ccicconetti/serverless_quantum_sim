@@ -4,6 +4,8 @@
 use rand::seq::SliceRandom;
 use rand::SeedableRng;
 use rand_distr::Distribution;
+use std::str::FromStr;
+use weighted_rand::builder::NewBuilder;
 
 static GIGA: u64 = 1000000000;
 
@@ -97,6 +99,24 @@ impl EventQueue {
     }
 }
 
+enum QuantumSchedulePolicy {
+    Fifo,
+    Random,
+    Weighted,
+}
+
+impl FromStr for QuantumSchedulePolicy {
+    type Err = anyhow::Error;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "fifo" => Ok(QuantumSchedulePolicy::Fifo),
+            "random" => Ok(QuantumSchedulePolicy::Random),
+            "weighted" => Ok(QuantumSchedulePolicy::Weighted),
+            _ => anyhow::bail!("cannot parse '{}' as quantum schedule policy", s),
+        }
+    }
+}
+
 #[derive(Debug)]
 pub struct Config {
     /// The seed to initialize pseudo-random number generators.
@@ -117,6 +137,8 @@ pub struct Config {
     pub max_classical_tasks: usize,
     /// The maximum queue length for quantum tasks.
     pub max_quantum_tasks: usize,
+    /// The policy to schedule quantum tasks.
+    pub quantum_schedule_policy: String,
     /// The job type.
     pub job_type: String,
     /// The job priorities.
@@ -125,11 +147,11 @@ pub struct Config {
 
 impl Config {
     pub fn header() -> String {
-        "seed,duration,job_interarrival,warmup_period,worker_capacity,num_serverless_workers,num_quantum_computers,max_classical_tasks,max_quantum_tasks,job_type,priorities".to_string()
+        "seed,duration,job_interarrival,warmup_period,worker_capacity,num_serverless_workers,num_quantum_computers,max_classical_tasks,max_quantum_tasks,quantum_schedule_policy,job_type,priorities".to_string()
     }
     pub fn to_csv(&self) -> String {
         format!(
-            "{},{},{},{},{},{},{},{},{},{},{}",
+            "{},{},{},{},{},{},{},{},{},{},{},{}",
             self.seed,
             self.duration,
             self.job_interarrival,
@@ -139,6 +161,7 @@ impl Config {
             self.num_quantum_computers,
             self.max_classical_tasks,
             self.max_quantum_tasks,
+            self.quantum_schedule_policy,
             self.job_type,
             self.priorities
         )
@@ -154,6 +177,8 @@ pub struct Simulation {
     active_classical_tasks: Vec<crate::task::Task>,
     pending_quantum_tasks: Vec<crate::task::Task>,
     active_quantum_tasks: Vec<crate::task::Task>,
+    quantum_schedule_policy: QuantumSchedulePolicy,
+    quantum_schedule_rng: rand::rngs::StdRng,
     num_qubits: Vec<u16>,
     priorities: Vec<u16>,
 
@@ -209,6 +234,10 @@ impl Simulation {
             active_classical_tasks: vec![],
             pending_quantum_tasks: vec![],
             active_quantum_tasks: vec![],
+            quantum_schedule_policy: QuantumSchedulePolicy::from_str(
+                &config.quantum_schedule_policy,
+            )?,
+            quantum_schedule_rng: rand::rngs::StdRng::seed_from_u64(next_seed()),
             num_qubits,
             priorities,
             config,
@@ -381,7 +410,7 @@ impl Simulation {
 
                         // if there is at least one pending quantum task put
                         // it into action
-                        if let Some(mut new_task) = self.pending_quantum_tasks.pop() {
+                        if let Some(mut new_task) = self.schedule_next_quantum_task() {
                             new_task.last_update = now;
                             if let crate::task::TaskType::Quantum(duration) = new_task.task_type {
                                 events.push(Event::QuantumIterationEnd(now + duration));
@@ -513,6 +542,32 @@ impl Simulation {
             single,
             series,
             config_csv: self.config.to_csv(),
+        }
+    }
+
+    fn schedule_next_quantum_task(&mut self) -> Option<crate::task::Task> {
+        if self.pending_quantum_tasks.is_empty() {
+            None
+        } else {
+            let index = match self.quantum_schedule_policy {
+                QuantumSchedulePolicy::Fifo => 0,
+                QuantumSchedulePolicy::Random => {
+                    let indices: Vec<usize> = (0..self.pending_quantum_tasks.len()).collect();
+                    *indices.choose(&mut self.quantum_schedule_rng).unwrap()
+                }
+                QuantumSchedulePolicy::Weighted => {
+                    let indices: Vec<usize> = (0..self.pending_quantum_tasks.len()).collect();
+                    let mut weights = vec![];
+                    for task in &self.pending_quantum_tasks {
+                        weights.push(self.active_jobs.get(&task.job_id).unwrap().priority as u32);
+                    }
+                    assert_eq!(weights.len(), indices.len());
+                    weighted_rand::builder::WalkerTableBuilder::new(&weights)
+                        .build()
+                        .next()
+                }
+            };
+            Some(self.pending_quantum_tasks.swap_remove(index))
         }
     }
 

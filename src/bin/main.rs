@@ -31,6 +31,9 @@ struct Args {
     /// The maximum queue length for quantum tasks
     #[arg(long, default_value_t = 50)]
     max_quantum_tasks: usize,
+    /// The policy to schedule quantum tasks.
+    #[arg(long, default_value_t = String::from("fifo"))]
+    quantum_schedule_policy: String,
     /// The job type
     #[arg(long, default_value_t = String::from("VQE;4;6;8;10"))]
     job_type: String,
@@ -111,6 +114,7 @@ async fn main() -> anyhow::Result<()> {
                 num_quantum_computers: args.num_quantum_computers,
                 max_classical_tasks: args.max_classical_tasks,
                 max_quantum_tasks: args.max_quantum_tasks,
+                quantum_schedule_policy: args.quantum_schedule_policy.clone(),
                 job_type: args.job_type.clone(),
                 priorities: args.priorities.clone(),
             });
