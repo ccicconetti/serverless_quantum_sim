@@ -66,8 +66,6 @@ pub struct EventQueue {
     update_classical_task_times: std::collections::BTreeSet<u64>,
 }
 
-
-
 impl EventQueue {
     fn push(&mut self, event: Event) {
         if let Event::UpdateClassicalTasks(t) = &event {
@@ -81,10 +79,8 @@ impl EventQueue {
     }
     fn pop(&mut self) -> Option<Event> {
         let event = self.queue.pop();
-        if let Some(event) = &event {
-            if let Event::UpdateClassicalTasks(t) = &event {
-                self.update_classical_task_times.remove(t);
-            }
+        if let Some(Event::UpdateClassicalTasks(t)) = &event {
+            self.update_classical_task_times.remove(t);
         }
         event
     }
