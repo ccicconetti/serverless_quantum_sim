@@ -495,7 +495,7 @@ impl Simulation {
                         let capacity_ratio = capacity.map(|capacity| capacity as f64 / 1e9_f64);
                         for task in &mut self.active_classical_tasks {
                             let num_ops = if let Some(capacity_ratio) = capacity_ratio {
-                                ((now - task.last_update) as f64 * capacity_ratio).round() as u64
+                                ((now - task.last_update) as f64 * capacity_ratio).ceil() as u64
                             } else {
                                 0
                             };
@@ -571,26 +571,32 @@ impl Simulation {
     }
 
     fn log_internals(&self, hdr: &str, now: u64) {
-        if !log::log_enabled!(log::Level::Debug) {
-            return;
-        }
-        log::debug!("{} {} active jobs {:?}", hdr, now, self.active_jobs);
         log::debug!(
-            "{} {} classical tasks {:?}",
+            "{} {} active jobs [{}] {:?}",
             hdr,
             now,
+            self.active_jobs.len(),
+            self.active_jobs
+        );
+        log::debug!(
+            "{} {} classical tasks [{}] {:?}",
+            hdr,
+            now,
+            self.active_classical_tasks.len(),
             self.active_classical_tasks
         );
         log::debug!(
-            "{} {} pending quantum tasks {:?}",
+            "{} {} pending quantum tasks [{}] {:?}",
             hdr,
             now,
+            self.pending_quantum_tasks.len(),
             self.pending_quantum_tasks
         );
         log::debug!(
-            "{} {} active quantum tasks {:?}",
+            "{} {} active quantum tasks [{}] {:?}",
             hdr,
             now,
+            self.active_quantum_tasks.len(),
             self.active_quantum_tasks
         );
     }
