@@ -128,9 +128,26 @@ impl Default for OutputSingle {
     }
 }
 
+pub struct OutputSeriesSingle {
+    pub header: String,
+    pub values: std::collections::HashMap<String, Vec<f64>>,
+}
+
+impl Default for OutputSeriesSingle {
+    fn default() -> Self {
+        Self {
+            header: "label".to_string(),
+            values: std::collections::HashMap::new(),
+        }
+    }
+}
+
+/// Series of values.
+/// The values are not recorded until `enabled()` is called.
+/// Each series is associated with a name (with optional header) and a label.
 pub struct OutputSeries {
     enabled: bool,
-    pub series: std::collections::HashMap<String, Vec<f64>>,
+    pub series: std::collections::HashMap<String, OutputSeriesSingle>,
 }
 
 impl Default for OutputSeries {
@@ -147,14 +164,34 @@ impl OutputSeries {
         }
     }
 
-    pub fn add(&mut self, name: &str, value: f64) {
+    /// Add a new value to a series metric.
+    /// Parameters:
+    /// - `name`: the metric name.
+    /// - `label`: a label associated with the value.
+    /// - `value`: the value added, if collection is enabled.
+    pub fn add(&mut self, name: &str, label: &str, value: f64) {
         if self.enabled {
-            self.series.entry(name.to_string()).or_default().push(value);
+            self.series
+                .entry(name.to_string())
+                .or_default()
+                .values
+                .entry(label.to_string())
+                .or_default()
+                .push(value);
         }
     }
 
+    /// Enable the collection of values.
     pub fn enable(&mut self) {
         self.enabled = true;
+    }
+
+    /// Set the header for a given metric.
+    /// Parameters:
+    /// - `name`: the name of the metric.
+    /// - `header`: the header to be used for serializing values.
+    pub fn set_header(&mut self, name: &str, header: &str) {
+        self.series.entry(name.to_string()).or_default().header = header.to_string();
     }
 }
 
@@ -428,7 +465,11 @@ impl Simulation {
                             now,
                             self.active_quantum_tasks.len() as f64,
                         );
-                        series.add("qc_iter_dur", to_seconds(now - completed_task.start_time));
+                        series.add(
+                            "qc_iter_dur",
+                            "",
+                            to_seconds(now - completed_task.start_time),
+                        );
 
                         let new_task_res = self.new_task_for_job(
                             now,
@@ -527,7 +568,7 @@ impl Simulation {
 
                         // add a performance sample for the task duration
                         for start_time in finished_tasks_start_times {
-                            series.add("classical_dur", to_seconds(now - start_time));
+                            series.add("classical_dur", "", to_seconds(now - start_time));
                         }
 
                         // remove the completed tasks from the active set
@@ -614,7 +655,7 @@ impl Simulation {
         if let Some(new_task) = job.next_task(now) {
             (false, self.manage_task(now, new_task, single))
         } else {
-            series.add("job_time", to_seconds(now - job.time_arrival));
+            series.add("job_time", "", to_seconds(now - job.time_arrival));
             (true, None)
         }
     }

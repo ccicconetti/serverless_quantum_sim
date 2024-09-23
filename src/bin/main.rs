@@ -167,24 +167,27 @@ async fn main() -> anyhow::Result<()> {
             output.single.to_csv()
         )?;
 
-        for (name, values) in output.series.series {
+        for (name, elem) in &output.series.series {
             let mut series_file = open_output_file(
                 &args.output_path,
                 format!("{}.csv", name).as_str(),
                 args.append,
                 format!(
-                    "{}{},value",
+                    "{}{},{},value",
                     args.additional_header,
                     serverless_quantum_sim::simulation::Config::header(),
+                    elem.header
                 )
                 .as_str(),
             )?;
-            for value in values {
-                writeln!(
-                    &mut series_file,
-                    "{}{},{}",
-                    args.additional_fields, output.config_csv, value
-                )?;
+            for (label, values) in &elem.values {
+                for value in values {
+                    writeln!(
+                        &mut series_file,
+                        "{}{},{},{}",
+                        args.additional_fields, output.config_csv, label, value
+                    )?;
+                }
             }
         }
     }
