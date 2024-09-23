@@ -58,6 +58,45 @@ impl Ord for Event {
     }
 }
 
+pub struct EventQueue {
+    queue: std::collections::BinaryHeap<Event>,
+    update_classical_task_times: std::collections::BTreeSet<u64>,
+}
+
+impl Default for EventQueue {
+    fn default() -> Self {
+        Self {
+            queue: std::collections::BinaryHeap::new(),
+            update_classical_task_times: std::collections::BTreeSet::new(),
+        }
+    }
+}
+
+impl EventQueue {
+    fn push(&mut self, event: Event) {
+        if let Event::UpdateClassicalTasks(t) = &event {
+            if self.update_classical_task_times.contains(t) {
+                return;
+            } else {
+                self.update_classical_task_times.insert(*t);
+            }
+        }
+        self.queue.push(event);
+    }
+    fn pop(&mut self) -> Option<Event> {
+        let event = self.queue.pop();
+        if let Some(event) = &event {
+            if let Event::UpdateClassicalTasks(t) = &event {
+                self.update_classical_task_times.remove(t);
+            }
+        }
+        event
+    }
+    fn len(&self) -> usize {
+        self.queue.len()
+    }
+}
+
 #[derive(Debug)]
 pub struct Config {
     /// The seed to initialize pseudo-random number generators.
@@ -80,15 +119,17 @@ pub struct Config {
     pub max_quantum_tasks: usize,
     /// The job type.
     pub job_type: String,
+    /// The job priorities.
+    pub priorities: String,
 }
 
 impl Config {
     pub fn header() -> String {
-        "seed,duration,job_interarrival,warmup_period,worker_capacity,num_serverless_workers,num_quantum_computers,max_classical_tasks,max_quantum_tasks,job_type".to_string()
+        "seed,duration,job_interarrival,warmup_period,worker_capacity,num_serverless_workers,num_quantum_computers,max_classical_tasks,max_quantum_tasks,job_type,priorities".to_string()
     }
     pub fn to_csv(&self) -> String {
         format!(
-            "{},{},{},{},{},{},{},{},{},{}",
+            "{},{},{},{},{},{},{},{},{},{},{}",
             self.seed,
             self.duration,
             self.job_interarrival,
@@ -98,7 +139,8 @@ impl Config {
             self.num_quantum_computers,
             self.max_classical_tasks,
             self.max_quantum_tasks,
-            self.job_type
+            self.job_type,
+            self.priorities
         )
     }
 }
@@ -113,6 +155,7 @@ pub struct Simulation {
     pending_quantum_tasks: Vec<crate::task::Task>,
     active_quantum_tasks: Vec<crate::task::Task>,
     num_qubits: Vec<u16>,
+    priorities: Vec<u16>,
 
     // configuration
     config: Config,
@@ -143,6 +186,15 @@ impl Simulation {
             "cannot parse number of qubits in VQE job type"
         );
 
+        let tokens = config.priorities.split(';').clone().collect::<Vec<&str>>();
+        anyhow::ensure!(!tokens.is_empty(), "invalid empty priorities");
+        let priorities = tokens
+            .iter()
+            .filter_map(|x| x.parse::<u16>().ok())
+            .filter(|x| *x > 0)
+            .collect::<Vec<u16>>();
+        anyhow::ensure!(tokens.len() == priorities.len(), "cannot parse priorities");
+
         let mut seed_cnt = 0_u64;
         let mut next_seed = || {
             seed_cnt += 1;
@@ -158,6 +210,7 @@ impl Simulation {
             pending_quantum_tasks: vec![],
             active_quantum_tasks: vec![],
             num_qubits,
+            priorities,
             config,
         })
     }
@@ -169,7 +222,7 @@ impl Simulation {
         let mut series = crate::output::OutputSeries::new();
 
         // create the event queue and push initial events
-        let mut events = std::collections::BinaryHeap::new();
+        let mut events = EventQueue::default();
         events.push(Event::JobStart(0));
         events.push(Event::WarmupPeriodEnd(to_nanoseconds(
             self.config.warmup_period,
@@ -191,15 +244,30 @@ impl Simulation {
         // metrics
         let mut num_job_accepted = 0;
         let mut num_job_dropped = 0;
+        let mut num_events = 0;
         series.set_header("job_time", "num_qubits,priority");
         series.set_header("qc_iter_dur", "num_qubits,priority");
         series.set_header("classical_dur", "num_qubits,priority");
 
         // simulation loop
         let real_now = std::time::Instant::now();
+        let mut last_time = 0;
         'main_loop: loop {
             if let Some(event) = events.pop() {
                 now = event.time();
+
+                single.time_avg("event_queue_len", now, events.len() as f64);
+
+                log::debug!("XXX {} {}", now, now - last_time);
+
+                // make sure we never go back in time
+                assert!(now >= last_time);
+                last_time = now;
+
+                // count the number of events
+                num_events += 1;
+
+                // handle the current event
                 match event {
                     Event::JobStart(time_arrival) => {
                         assert_eq!(time_arrival, now);
@@ -212,9 +280,15 @@ impl Simulation {
                                 .num_qubits
                                 .choose(&mut self.vqe_num_qubits_rng)
                                 .unwrap();
-                            let job = self
-                                .job_factory
-                                .make(crate::job::JobType::Vqe(*num_qubits), now);
+                            let priority = self
+                                .priorities
+                                .choose(&mut self.vqe_num_qubits_rng)
+                                .unwrap();
+                            let job = self.job_factory.make(
+                                crate::job::JobType::Vqe(*num_qubits),
+                                *priority,
+                                now,
+                            );
                             log::debug!("A {} {:?}", now, job);
 
                             // manage the job's initial task
@@ -228,7 +302,11 @@ impl Simulation {
                                 // add the job the map of active ones
                                 self.active_jobs.insert(job.job_id, job);
                             } else {
-                                log::warn!("error when creating a job with {} qubits", num_qubits);
+                                log::warn!(
+                                    "error when creating a job with {} qubits and priority {}",
+                                    num_qubits,
+                                    priority
+                                );
                             }
                             num_job_accepted += 1;
                         } else {
@@ -297,8 +375,7 @@ impl Simulation {
                         if new_task_res.0 {
                             let res = self.active_jobs.remove(&completed_task.job_id);
                             assert!(res.is_some());
-                        }
-                        if let Some(event) = new_task_res.1 {
+                        } else if let Some(event) = new_task_res.1 {
                             events.push(event);
                         }
 
@@ -371,18 +448,6 @@ impl Simulation {
                             }
                         }
 
-                        if !residuals.is_empty() {
-                            // find the smallest residual, if there tasks that
-                            // are still active after this event is fully handled
-                            residuals.sort_unstable();
-                            let smallest_residual = residuals.first().unwrap();
-
-                            // create an event that is handled when the task with
-                            // the smallest residual finishes, unless there are new
-                            // tasks arriving that will mess the schedule
-                            events.push(Event::UpdateClassicalTasks(now + smallest_residual));
-                        }
-
                         // add a performance sample for the task duration
                         for (job_id, start_time) in finished_tasks_start_times {
                             series.add(
@@ -390,6 +455,25 @@ impl Simulation {
                                 &self.active_jobs.get(&job_id).unwrap().label,
                                 to_seconds(now - start_time),
                             );
+                        }
+
+                        if !residuals.is_empty() {
+                            // find the smallest residual, if there tasks that
+                            // are still active after this event is fully handled
+                            residuals.sort_unstable();
+                            let smallest_residual = residuals.first().unwrap();
+
+                            log::debug!(
+                                "YYY {} + {} = {}",
+                                now,
+                                smallest_residual,
+                                now + smallest_residual
+                            );
+
+                            // create an event that is handled when the task with
+                            // the smallest residual finishes, unless there are new
+                            // tasks arriving that will mess the schedule
+                            events.push(Event::UpdateClassicalTasks(now + smallest_residual));
                         }
 
                         // remove the completed tasks from the active set
@@ -409,8 +493,7 @@ impl Simulation {
                             if new_task_res.0 {
                                 let res = self.active_jobs.remove(job_id);
                                 assert!(res.is_some());
-                            }
-                            if let Some(event) = new_task_res.1 {
+                            } else if let Some(event) = new_task_res.1 {
                                 events.push(event);
                             }
                         }
@@ -420,6 +503,7 @@ impl Simulation {
         }
 
         // save final metrics
+        single.one_time("num_events", num_events as f64);
         single.one_time("execution_time", real_now.elapsed().as_secs_f64());
         single.one_time("num_job_accepted", num_job_accepted as f64);
         single.one_time("num_job_dropped", num_job_dropped as f64);

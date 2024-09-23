@@ -159,8 +159,14 @@ impl JobFactory {
     /// Create a new random job.
     /// Parameters:
     /// - `job_type`: the job type
+    /// - `priority`: the job priority
     /// - `time_arrival`: the time of arrival of this job, in ns
-    pub fn make(&mut self, job_type: JobType, time_arrival: u64) -> anyhow::Result<Job> {
+    pub fn make(
+        &mut self,
+        job_type: JobType,
+        priority: u16,
+        time_arrival: u64,
+    ) -> anyhow::Result<Job> {
         let id = self.next_job_id;
         self.next_job_id += 1;
 
@@ -219,8 +225,8 @@ impl JobFactory {
                     num_iterations: *num_iterations,
                     time_arrival,
                     num_qubits,
-                    priority: 1,
-                    label: format!("{},{}", num_qubits, 1),
+                    priority,
+                    label: format!("{},{}", num_qubits, priority),
                 })
             }
         }
@@ -238,7 +244,9 @@ mod tests {
         let mut id = 0;
         for i in 0..10 {
             for num_qubits in &num_qubits_choices {
-                let job = jf.make(JobType::Vqe(*num_qubits), i).unwrap();
+                let job = jf
+                    .make(JobType::Vqe(*num_qubits), i, i as u64 * 1000)
+                    .unwrap();
                 println!("{:?}", job);
                 assert!(job.num_operations_pre > 0);
                 assert!(job.num_operations_iter > 0);
@@ -246,13 +254,14 @@ mod tests {
                 assert!(job.dur_qc_iteration > 0);
                 assert!(job.num_iterations > 0);
                 assert!(job.num_iterations < 1000000);
-                assert_eq!(i, job.time_arrival);
+                assert_eq!(i, job.priority);
+                assert_eq!(i as u64 * 1000, job.time_arrival);
                 assert_eq!(id, job.job_id);
                 id += 1;
             }
         }
 
-        assert!(jf.make(JobType::Vqe(999), 0).is_err());
+        assert!(jf.make(JobType::Vqe(999), 0, 0).is_err());
 
         Ok(())
     }

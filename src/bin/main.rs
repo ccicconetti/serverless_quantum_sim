@@ -34,6 +34,9 @@ struct Args {
     /// The job type
     #[arg(long, default_value_t = String::from("VQE;4;6;8;10"))]
     job_type: String,
+    /// The job priorities
+    #[arg(long, default_value_t = String::from("1;2;4"))]
+    priorities: String,
     /// Initial seed to initialize the pseudo-random number generators
     #[arg(long, default_value_t = 0)]
     seed_init: u64,
@@ -109,6 +112,7 @@ async fn main() -> anyhow::Result<()> {
                 max_classical_tasks: args.max_classical_tasks,
                 max_quantum_tasks: args.max_quantum_tasks,
                 job_type: args.job_type.clone(),
+                priorities: args.priorities.clone(),
             });
     }
 
