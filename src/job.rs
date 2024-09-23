@@ -45,6 +45,12 @@ pub struct Job {
     num_iterations: u64,
     /// Arrival time, in ns.
     pub time_arrival: u64,
+    /// Number of qubits.
+    pub num_qubits: u16,
+    /// Priority (a higher value means a higher priority).
+    pub priority: u16,
+    /// Label.
+    pub label: String,
 }
 
 impl Job {
@@ -212,6 +218,9 @@ impl JobFactory {
                     dur_qc_iteration: *dur_qc_iteration,
                     num_iterations: *num_iterations,
                     time_arrival,
+                    num_qubits,
+                    priority: 1,
+                    label: format!("{},{}", num_qubits, 1),
                 })
             }
         }

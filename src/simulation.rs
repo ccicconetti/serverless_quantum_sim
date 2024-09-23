@@ -191,6 +191,9 @@ impl Simulation {
         // metrics
         let mut num_job_accepted = 0;
         let mut num_job_dropped = 0;
+        series.set_header("job_time", "num_qubits,priority");
+        series.set_header("qc_iter_dur", "num_qubits,priority");
+        series.set_header("classical_dur", "num_qubits,priority");
 
         // simulation loop
         let real_now = std::time::Instant::now();
@@ -281,7 +284,7 @@ impl Simulation {
                         );
                         series.add(
                             "qc_iter_dur",
-                            "",
+                            &self.active_jobs.get(&completed_task.job_id).unwrap().label,
                             to_seconds(now - completed_task.start_time),
                         );
 
@@ -360,7 +363,7 @@ impl Simulation {
                                 assert!(*residual >= num_ops);
                                 *residual -= num_ops;
                                 if *residual == 0 {
-                                    finished_tasks_start_times.push(task.start_time);
+                                    finished_tasks_start_times.push((task.job_id, task.start_time));
                                     finished_task_job_ids.insert(task.job_id);
                                 } else {
                                     residuals.push(*residual);
@@ -381,8 +384,12 @@ impl Simulation {
                         }
 
                         // add a performance sample for the task duration
-                        for start_time in finished_tasks_start_times {
-                            series.add("classical_dur", "", to_seconds(now - start_time));
+                        for (job_id, start_time) in finished_tasks_start_times {
+                            series.add(
+                                "classical_dur",
+                                &self.active_jobs.get(&job_id).unwrap().label,
+                                to_seconds(now - start_time),
+                            );
                         }
 
                         // remove the completed tasks from the active set
@@ -469,7 +476,7 @@ impl Simulation {
         if let Some(new_task) = job.next_task(now) {
             (false, self.manage_task(now, new_task, single))
         } else {
-            series.add("job_time", "", to_seconds(now - job.time_arrival));
+            series.add("job_time", &job.label, to_seconds(now - job.time_arrival));
             (true, None)
         }
     }
