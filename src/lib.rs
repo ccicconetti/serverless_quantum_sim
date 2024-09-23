@@ -2,5 +2,6 @@
 // SPDX-License-Identifier: MIT
 
 pub mod job;
+pub mod output;
 pub mod simulation;
 pub mod task;
