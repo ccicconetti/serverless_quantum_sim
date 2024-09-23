@@ -60,19 +60,13 @@ impl Ord for Event {
     }
 }
 
+#[derive(Default)]
 pub struct EventQueue {
     queue: std::collections::BinaryHeap<Event>,
     update_classical_task_times: std::collections::BTreeSet<u64>,
 }
 
-impl Default for EventQueue {
-    fn default() -> Self {
-        Self {
-            queue: std::collections::BinaryHeap::new(),
-            update_classical_task_times: std::collections::BTreeSet::new(),
-        }
-    }
-}
+
 
 impl EventQueue {
     fn push(&mut self, event: Event) {
