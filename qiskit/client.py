@@ -10,12 +10,16 @@ import os
 import time
 import logging
 import datetime
-from qiskit_serverless import QiskitFunction, ServerlessClient
+from qiskit_serverless import QiskitFunction, ServerlessClient, IBMServerlessClient
 from prepare_input import prepare_input, get_datasets, dataset_name
+from ibm_credentials import get_ibm_credentials
 
 # Files where to save the output of the experiments
 OUTPUT_SINGLE = "output_single.csv"
 OUTPUT_SERIES = "output_series.csv"
+
+# Options
+DRY = bool(os.environ.get("DRY", ""))
 
 
 def dump_data(
@@ -69,23 +73,38 @@ logging.basicConfig(
     datefmt="%Y-%m-%d %H:%M:%S",
 )
 
+# Check IBM credentials
+ibm_credentials = get_ibm_credentials()
+logging.info("IBM credentials: {}".format(ibm_credentials))
+
+# Get all the datasets
+datasets = get_datasets(min_qubits=4, max_qubits=4)
+
+if DRY:
+    for dataset in datasets:
+        print(dataset)
+    quit()
+
 # Create a client that connects to a local cluster
-serverless = ServerlessClient(
-    token=os.environ.get("GATEWAY_TOKEN", "awesome_token"),
-    host=os.environ.get("GATEWAY_HOST", "http://localhost:8000"),
-)
+if ibm_credentials is None:
+    serverless = ServerlessClient(
+        token=os.environ.get("GATEWAY_TOKEN", "awesome_token"),
+        host=os.environ.get("GATEWAY_HOST", "http://localhost:8000"),
+    )
+else:
+    serverless = IBMServerlessClient(token=ibm_credentials["TOKEN"])
 
 # Create and upload the VQE function
+dependencies = []
+if ibm_credentials is None:
+    dependencies = ["qiskit_aer"]
 function = QiskitFunction(
     title="vqe",
     entrypoint="vqe.py",
     working_dir="function",
-    dependencies=["qiskit_aer"],
+    dependencies=dependencies,
 )
 serverless.upload(function)
-
-# Get all the datasets
-datasets = get_datasets(max_qubits=10)
 
 # Run the experiment
 for dataset in datasets:
@@ -93,7 +112,7 @@ for dataset in datasets:
     timestamp = int(time.time())
 
     # Prepare the function arguments
-    input_arguments = prepare_input(dataset_name(dataset))
+    input_arguments = prepare_input(dataset_name(dataset), ibm_credentials)
 
     logging.info("starting with input arguments: {}".format(input_arguments))
 
@@ -113,6 +132,7 @@ for dataset in datasets:
         if status == "DONE":
             break
         elif status == "ERROR":
+            logging.error(job.logs())
             raise RuntimeError("the job could not be run")
         time.sleep(0.01)
 

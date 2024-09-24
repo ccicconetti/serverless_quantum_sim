@@ -2,11 +2,15 @@
 # The original code is available on GitHub:
 # https://github.com/Qiskit/qiskit-serverless
 
-from qiskit_aer import AerSimulator
 import time
 import numpy as np
 from scipy.optimize import minimize
 
+from qiskit_ibm_runtime import (
+    EstimatorV2 as Estimator,
+    SamplerV2 as Sampler,
+    Session,
+)
 from qiskit_ibm_runtime import EstimatorV2 as Estimator, SamplerV2 as Sampler
 from qiskit.transpiler.preset_passmanagers import generate_preset_pass_manager
 from qiskit_serverless import (
@@ -123,11 +127,17 @@ if __name__ == "__main__":
     ts_last = time.perf_counter()
     arguments = get_arguments()
 
+    service = arguments.get("service")
     ansatz = arguments.get("ansatz")
     operator = arguments.get("operator")
     method = arguments.get("method", "COBYLA")
     initial_parameters = arguments.get("initial_parameters")
-    backend = AerSimulator()
+    if service:
+        backend = service.least_busy(operational=True, simulator=False)
+    else:
+        from qiskit_aer import AerSimulator
+
+        backend = AerSimulator()
     if initial_parameters is None:
         initial_parameters = 2 * np.pi * np.random.rand(ansatz.num_parameters)
 
@@ -143,14 +153,25 @@ if __name__ == "__main__":
     durations["run_transpile"] = ts_cur - ts_last
     ts_last = ts_cur
 
-    estimator = Estimator(backend=backend)
-    vqe_result, callback_dict = run_vqe(
-        initial_parameters=initial_parameters,
-        ansatz=ansatz_isa,
-        operator=operator_isa,
-        estimator=estimator,
-        method=method,
-    )
+    if service:
+        with Session(service=service, backend=backend) as session:
+            estimator = Estimator(session=session)
+            vqe_result, callback_dict = run_vqe(
+                initial_parameters=initial_parameters,
+                ansatz=ansatz_isa,
+                operator=operator_isa,
+                estimator=estimator,
+                method=method,
+            )
+    else:
+        estimator = Estimator(backend=backend)
+        vqe_result, callback_dict = run_vqe(
+            initial_parameters=initial_parameters,
+            ansatz=ansatz_isa,
+            operator=operator_isa,
+            estimator=estimator,
+            method=method,
+        )
 
     ts_cur = time.perf_counter()
     durations["run_vqe"] = ts_cur - ts_last
@@ -164,8 +185,17 @@ if __name__ == "__main__":
     durations["run_qc"] = ts_cur - ts_last
     ts_last = ts_cur
 
-    sampler = Sampler(backend=backend)
-    samp_dist = sampler.run([qc_isa], shots=int(1e4)).result()[0].data.meas.get_counts()
+    if service:
+        with Session(service=service, backend=backend) as session:
+            sampler = Sampler(session=session)
+            samp_dist = (
+                sampler.run([qc_isa], shots=int(1e4)).result()[0].data.meas.get_counts()
+            )
+    else:
+        sampler = Sampler(backend=backend)
+        samp_dist = (
+            sampler.run([qc_isa], shots=int(1e4)).result()[0].data.meas.get_counts()
+        )
 
     ts_cur = time.perf_counter()
     durations["run_sampler"] = ts_cur - ts_last

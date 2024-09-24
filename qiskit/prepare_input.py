@@ -5,6 +5,7 @@ from qiskit.circuit.library import EfficientSU2
 
 from hamlib_read import read_openfermion_hdf5, get_hdf5_keys
 from qubitop_to_pauliop import qubitop_to_pauliop
+from qiskit_ibm_runtime import QiskitRuntimeService
 
 HAM_FILENAME = "ham-graph-regular_reg-3.hdf5"
 LABELS = ["reg", "n", "rinst"]
@@ -20,7 +21,7 @@ def dataset_name(values: list):
     return "{}".format("_".join(fields))
 
 
-def get_datasets(max_qubits: int):
+def get_datasets(min_qubits: int, max_qubits: int):
     keys = get_hdf5_keys(HAM_FILENAME)
     datasets = []
 
@@ -33,7 +34,7 @@ def get_datasets(max_qubits: int):
             assert len(subtokens) == 2
             assert subtokens[0] == LABELS[i]
             value = int(subtokens[1])
-            if i == 1 and value > max_qubits:
+            if i == 1 and (value < min_qubits or value > max_qubits):
                 break
             entry.append(value)
         if len(entry) == len(LABELS):
@@ -43,7 +44,19 @@ def get_datasets(max_qubits: int):
     return datasets
 
 
-def prepare_input(dataset: str):
+def prepare_input(dataset: str, ibm_credentials: dict | None):
+
+    service = None
+    if ibm_credentials is not None:
+        assert "CHANNEL" in ibm_credentials and ibm_credentials["CHANNEL"] != ""
+        assert "INSTANCE" in ibm_credentials and ibm_credentials["INSTANCE"] != ""
+        assert "TOKEN" in ibm_credentials and ibm_credentials["TOKEN"] != ""
+        service = QiskitRuntimeService(
+            channel=ibm_credentials["CHANNEL"],
+            instance=ibm_credentials["INSTANCE"],
+            token=ibm_credentials["TOKEN"],
+            verify=False,
+        )
 
     of = read_openfermion_hdf5(HAM_FILENAME, key=dataset)
     operator = qubitop_to_pauliop(of)
@@ -56,6 +69,7 @@ def prepare_input(dataset: str):
         "method": "COBYLA",
         "n_qubits": operator.num_qubits,
         "dataset": dataset,
+        "service": service,
     }
 
     return input_arguments
