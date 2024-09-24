@@ -91,6 +91,7 @@ impl EventQueue {
 
 enum QuantumSchedulePolicy {
     Fifo,
+    Lifo,
     Random,
     Weighted,
 }
@@ -100,6 +101,7 @@ impl FromStr for QuantumSchedulePolicy {
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s {
             "fifo" => Ok(QuantumSchedulePolicy::Fifo),
+            "lifo" => Ok(QuantumSchedulePolicy::Lifo),
             "random" => Ok(QuantumSchedulePolicy::Random),
             "weighted" => Ok(QuantumSchedulePolicy::Weighted),
             _ => anyhow::bail!("cannot parse '{}' as quantum schedule policy", s),
@@ -541,6 +543,7 @@ impl Simulation {
         } else {
             let index = match self.quantum_schedule_policy {
                 QuantumSchedulePolicy::Fifo => 0,
+                QuantumSchedulePolicy::Lifo => self.pending_quantum_tasks.len() - 1,
                 QuantumSchedulePolicy::Random => {
                     let indices: Vec<usize> = (0..self.pending_quantum_tasks.len()).collect();
                     *indices.choose(&mut self.quantum_schedule_rng).unwrap()
