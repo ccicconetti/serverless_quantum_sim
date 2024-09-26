@@ -78,7 +78,7 @@ ibm_credentials = get_ibm_credentials()
 logging.info("IBM credentials: {}".format(ibm_credentials))
 
 # Get all the datasets
-datasets = get_datasets(min_qubits=4, max_qubits=4)
+datasets = get_datasets(min_qubits=4, max_qubits=10)
 
 if DRY:
     for dataset in datasets:
