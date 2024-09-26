@@ -22,7 +22,7 @@ try:
     status = job.status()
     if status == "DONE":
         for idx, pub_result in enumerate(job.result()):
-            print(f"Expectation values for pub {idx}: {pub_result.data.evs}")
+            print(f"Expectation values for pub {idx}: {pub_result}")
 
     elif status == "ERROR":
         print(job.logs())
