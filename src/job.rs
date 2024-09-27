@@ -113,12 +113,28 @@ impl JobFactory {
     /// Create a factory of jobs.
     /// Parameters:
     /// - `seed`: pseudo-random number generator seed
-    pub fn new(seed: u64) -> anyhow::Result<Self> {
+    /// - `target_dur_qc_avg`: target durations, in s, of the quantum iterations
+    ///   can be empty for some or all values, in which case there is no
+    ///   adjustment of the values read from the trace file
+    pub fn new(
+        seed: u64,
+        target_dur_qc_avg: &std::collections::BTreeMap<u16, f64>,
+    ) -> anyhow::Result<Self> {
         let pre_values = Self::read_from_file("input/pre.csv", SECOND as f64)?;
         let iter_values = Self::read_from_file("input/cost_time.csv", SECOND as f64)?;
         let post_values = Self::read_from_file("input/post.csv", SECOND as f64)?;
-        let dur_qc_values = Self::read_from_file("input/exec_time.csv", SECOND as f64)?;
+        let mut dur_qc_values = Self::read_from_file("input/exec_time.csv", SECOND as f64)?;
         let num_iterations_values = Self::read_from_file("input/num_iterations.csv", 1_f64)?;
+
+        let dur_qc_stats = Self::single_trace_stats(1.0 / SECOND as f64, &dur_qc_values);
+        for (num_qubits, values) in &mut dur_qc_values {
+            let average = dur_qc_stats.iter().find(|x| x.0 == *num_qubits).unwrap().2;
+            if let Some(target_average) = target_dur_qc_avg.get(num_qubits) {
+                for value in values {
+                    *value = (*value as f64 * (*target_average / average)).round() as u64;
+                }
+            }
+        }
 
         Ok(Self {
             rng: rand::rngs::StdRng::seed_from_u64(seed),
@@ -286,7 +302,7 @@ mod tests {
 
     #[test]
     fn test_job_factory() -> anyhow::Result<()> {
-        let mut jf = JobFactory::new(42).unwrap();
+        let mut jf = JobFactory::new(42, &std::collections::BTreeMap::new()).unwrap();
         let num_qubits_choices = vec![4, 6, 8, 10];
         let mut id = 0;
         for i in 0..10 {

@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 use clap::Parser;
+use std::io::BufRead;
 use std::io::Write;
 
 #[derive(Debug, clap::Parser)]
@@ -46,6 +47,9 @@ struct Args {
     /// Print trace stats and quit
     #[arg(long, default_value_t = false)]
     trace_stats: bool,
+    /// CSV file containing the target quantum iteration durations
+    #[arg(long, default_value_t = String::from(""))]
+    target_qc_dur_file: String,
     /// Initial seed to initialize the pseudo-random number generators
     #[arg(long, default_value_t = 0)]
     seed_init: u64,
@@ -93,6 +97,27 @@ fn open_output_file(
     Ok(f)
 }
 
+fn read_qc_dur_file(filename: &str) -> anyhow::Result<std::collections::BTreeMap<u16, f64>> {
+    let mut ret = std::collections::BTreeMap::new();
+
+    let file = std::fs::File::open(filename)?;
+    let reader = std::io::BufReader::new(file);
+
+    for line in reader.lines().map_while(Result::ok) {
+        let tokens = line.split(',').collect::<Vec<&str>>();
+        anyhow::ensure!(
+            tokens.len() == 4,
+            "invalid line from file '{}': {}",
+            filename,
+            line
+        );
+        if let (Ok(num_qubits), Ok(value)) = (tokens[1].parse::<u16>(), tokens[3].parse::<f64>()) {
+            ret.insert(num_qubits, value);
+        }
+    }
+    Ok(ret)
+}
+
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     env_logger::init();
@@ -104,35 +129,15 @@ async fn main() -> anyhow::Result<()> {
         "--additional_fields and --additional_header have a different number of commas"
     );
 
-    // create the configurations of all the experiments
-    let configurations = std::sync::Arc::new(std::sync::Mutex::new(vec![]));
-    for seed in args.seed_init..args.seed_end {
-        configurations
-            .lock()
-            .unwrap()
-            .push(serverless_quantum_sim::simulation::Config {
-                seed,
-                duration: args.duration,
-                job_interarrival: args.job_interarrival,
-                warmup_period: args.warmup_period,
-                worker_capacity: args.worker_capacity,
-                num_serverless_workers: args.num_serverless_workers,
-                num_quantum_computers: args.num_quantum_computers,
-                max_classical_tasks: args.max_classical_tasks,
-                max_quantum_tasks: args.max_quantum_tasks,
-                quantum_schedule_policy: args.quantum_schedule_policy.clone(),
-                job_type: args.job_type.clone(),
-                priorities: args.priorities.clone(),
-                save_iteration_durations: args.save_iteration_durations,
-            });
-    }
+    let target_dur_qc_avg = if !args.target_qc_dur_file.is_empty() {
+        read_qc_dur_file(&args.target_qc_dur_file)?
+    } else {
+        std::collections::BTreeMap::new()
+    };
 
-    if configurations.lock().unwrap().is_empty() {
-        return Ok(());
-    }
-
+    // print trace statistics and quit, if applicable
     if args.trace_stats {
-        let trace_stats = serverless_quantum_sim::job::JobFactory::new(0)
+        let trace_stats = serverless_quantum_sim::job::JobFactory::new(0, &target_dur_qc_avg)
             .unwrap()
             .trace_stats();
         let mut alt: std::collections::BTreeMap<u16, std::collections::HashMap<String, f64>> =
@@ -156,6 +161,34 @@ async fn main() -> anyhow::Result<()> {
                 + values["post"];
             println!("num_qubits {:>3} -> {}", num_qubits, avg_job_time);
         }
+        return Ok(());
+    }
+
+    // create the configurations of all the experiments
+    let configurations = std::sync::Arc::new(std::sync::Mutex::new(vec![]));
+    for seed in args.seed_init..args.seed_end {
+        configurations
+            .lock()
+            .unwrap()
+            .push(serverless_quantum_sim::simulation::Config {
+                seed,
+                duration: args.duration,
+                job_interarrival: args.job_interarrival,
+                warmup_period: args.warmup_period,
+                worker_capacity: args.worker_capacity,
+                num_serverless_workers: args.num_serverless_workers,
+                num_quantum_computers: args.num_quantum_computers,
+                max_classical_tasks: args.max_classical_tasks,
+                max_quantum_tasks: args.max_quantum_tasks,
+                quantum_schedule_policy: args.quantum_schedule_policy.clone(),
+                job_type: args.job_type.clone(),
+                priorities: args.priorities.clone(),
+                save_iteration_durations: args.save_iteration_durations,
+                target_dur_qc_avg: target_dur_qc_avg.clone(),
+            });
+    }
+
+    if configurations.lock().unwrap().is_empty() {
         return Ok(());
     }
 

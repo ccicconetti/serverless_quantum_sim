@@ -137,6 +137,8 @@ pub struct Config {
     pub priorities: String,
     /// Save iteration durations.
     pub save_iteration_durations: bool,
+    /// Target durationg of quantum iterations (can be empty).
+    pub target_dur_qc_avg: std::collections::BTreeMap<u16, f64>,
 }
 
 impl Config {
@@ -221,7 +223,7 @@ impl Simulation {
         };
 
         Ok(Self {
-            job_factory: crate::job::JobFactory::new(config.seed)?,
+            job_factory: crate::job::JobFactory::new(config.seed, &config.target_dur_qc_avg)?,
             job_interarrival_rng: rand::rngs::StdRng::seed_from_u64(next_seed()),
             vqe_num_qubits_rng: rand::rngs::StdRng::seed_from_u64(next_seed()),
             active_jobs: std::collections::HashMap::new(),
