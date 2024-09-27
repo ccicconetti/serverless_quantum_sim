@@ -1,6 +1,7 @@
 // SPDX-FileCopyrightText: © 2024 Claudio Cicconetti <c.cicconetti@iit.cnr.it>
 // SPDX-License-Identifier: MIT
 
+use average::{concatenate, Estimate, Max, Mean, Min};
 use rand::seq::SliceRandom;
 use rand::SeedableRng;
 use std::io::BufRead;
@@ -106,6 +107,8 @@ pub struct JobFactory {
     num_iterations_values: std::collections::HashMap<u16, Vec<u64>>,
 }
 
+concatenate!(Estimator, [Min, min], [Max, max], [Mean, mean]);
+
 impl JobFactory {
     /// Create a factory of jobs.
     /// Parameters:
@@ -126,6 +129,50 @@ impl JobFactory {
             dur_qc_values,
             num_iterations_values,
         })
+    }
+
+    fn single_trace_stats(
+        multiplier: f64,
+        data: &std::collections::HashMap<u16, Vec<u64>>,
+    ) -> Vec<(u16, f64, f64, f64)> {
+        let mut estimators: std::collections::BTreeMap<u16, Estimator> =
+            std::collections::BTreeMap::new();
+        for (k, values) in data {
+            let estimator = estimators.entry(*k).or_default();
+            for value in values {
+                estimator.add(*value as f64 * multiplier);
+            }
+        }
+        let mut ret = vec![];
+        for (k, estimator) in estimators {
+            ret.push((k, estimator.min(), estimator.mean(), estimator.max()))
+        }
+        ret
+    }
+
+    pub fn trace_stats(&self) -> std::collections::HashMap<String, Vec<(u16, f64, f64, f64)>> {
+        let mut ret = std::collections::HashMap::new();
+        ret.insert(
+            "pre".to_string(),
+            JobFactory::single_trace_stats(1.0 / SECOND as f64, &self.pre_values),
+        );
+        ret.insert(
+            "iter".to_string(),
+            JobFactory::single_trace_stats(1.0 / SECOND as f64, &self.iter_values),
+        );
+        ret.insert(
+            "post".to_string(),
+            JobFactory::single_trace_stats(1.0 / SECOND as f64, &self.post_values),
+        );
+        ret.insert(
+            "dur_qc".to_string(),
+            JobFactory::single_trace_stats(1.0 / SECOND as f64, &self.dur_qc_values),
+        );
+        ret.insert(
+            "num_iterations".to_string(),
+            JobFactory::single_trace_stats(1.0 as f64, &self.num_iterations_values),
+        );
+        ret
     }
 
     fn read_from_file(

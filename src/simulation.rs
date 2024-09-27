@@ -9,7 +9,7 @@ use weighted_rand::builder::NewBuilder;
 
 static GIGA: u64 = 1000000000;
 
-fn to_seconds(ns: u64) -> f64 {
+pub fn to_seconds(ns: u64) -> f64 {
     ns as f64 / GIGA as f64
 }
 
@@ -135,6 +135,8 @@ pub struct Config {
     pub job_type: String,
     /// The job priorities.
     pub priorities: String,
+    /// Save iteration durations.
+    pub save_iteration_durations: bool,
 }
 
 impl Config {
@@ -267,8 +269,10 @@ impl Simulation {
         let mut num_job_dropped = 0;
         let mut num_events = 0;
         series.set_header("job_time", "num_qubits,priority");
-        series.set_header("qc_iter_dur", "num_qubits,priority");
-        series.set_header("classical_dur", "num_qubits,priority");
+        if self.config.save_iteration_durations {
+            series.set_header("qc_iter_dur", "num_qubits,priority");
+            series.set_header("classical_dur", "num_qubits,priority");
+        }
 
         // simulation loop
         let real_now = std::time::Instant::now();
@@ -381,11 +385,13 @@ impl Simulation {
                             now,
                             self.active_quantum_tasks.len() as f64,
                         );
-                        series.add(
-                            "qc_iter_dur",
-                            &self.active_jobs.get(&completed_task.job_id).unwrap().label,
-                            to_seconds(now - completed_task.start_time),
-                        );
+                        if self.config.save_iteration_durations {
+                            series.add(
+                                "qc_iter_dur",
+                                &self.active_jobs.get(&completed_task.job_id).unwrap().label,
+                                to_seconds(now - completed_task.start_time),
+                            );
+                        }
 
                         let new_task_res = self.new_task_for_job(
                             now,
@@ -470,12 +476,14 @@ impl Simulation {
                         }
 
                         // add a performance sample for the task duration
-                        for (job_id, start_time) in finished_tasks_start_times {
-                            series.add(
-                                "classical_dur",
-                                &self.active_jobs.get(&job_id).unwrap().label,
-                                to_seconds(now - start_time),
-                            );
+                        if self.config.save_iteration_durations {
+                            for (job_id, start_time) in finished_tasks_start_times {
+                                series.add(
+                                    "classical_dur",
+                                    &self.active_jobs.get(&job_id).unwrap().label,
+                                    to_seconds(now - start_time),
+                                );
+                            }
                         }
 
                         if !residuals.is_empty() {
