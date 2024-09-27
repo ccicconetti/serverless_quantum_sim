@@ -1,7 +1,6 @@
 #!/bin/bash
 
 quantum_schedule_policies="fifo lifo random weighted"
-quantum_schedule_policies="lifo"
 
 bin=../../target/release/serverless_quantum_sim
 
