@@ -1,6 +1,6 @@
 #!/bin/bash
 
-num_serverless_workers_values="2 4 6 8 10"
+num_serverless_workers_values="1 2 3 4 5 6"
 job_interarrival_values="5 10 15 20 25"
 
 bin=../../target/release/serverless_quantum_sim
@@ -11,8 +11,8 @@ mkdir data 2> /dev/null
 for num_serverless_workers in $num_serverless_workers_values ; do
 for job_interarrival in $job_interarrival_values ; do
   cmd="$bin \
-    --duration 86400 \
-    --warmup-period 3600 \
+    --duration 3600 \
+    --warmup-period 300 \
     --job-interarrival $job_interarrival \
     --num-serverless-workers $num_serverless_workers \
     --num-quantum-computers 2 \
@@ -23,7 +23,7 @@ for job_interarrival in $job_interarrival_values ; do
     --priorities \"1\" \
     --concurrency 20 \
     --seed-init 0 \
-    --seed-end 20 \
+    --seed-end 100 \
     --append
     "
 
