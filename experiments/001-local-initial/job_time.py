@@ -3,17 +3,19 @@
 import pandas as pd
 import os
 import matplotlib.pyplot as plt
+import seaborn as sns
 
 IMAGE_TYPE = os.environ.get("IMAGE_TYPE", "png")
 DATASET = os.environ.get("DATASET", "data/job_time.csv")
 SHOW = bool(os.environ.get("SHOW", ""))
 
 
-def plot(df, by: list, show: bool, filename: str):
-    fig, ax = plt.subplots(1, 1, figsize=(len(by) * 5, 5))
-    df.boxplot(column=["value"], by=by, ax=ax)
+def plot(df, x: str, hue: str | None, show: bool, filename: str):
+    fig, ax = plt.subplots()
+    sns.boxplot(df, y="value", x=x, hue=hue, ax=ax)
     ax.set_ylabel("Job execution (s)")
     ax.set_title("")
+    ax.set_yscale("log")
     fig.suptitle("")
     if show:
         plt.show(block=False)
@@ -28,23 +30,28 @@ df = pd.read_csv(DATASET)
 df = df.rename(columns={"quantum_schedule_policy": "policy"})
 df = df.replace({"fifo": "F", "lifo": "L", "random": "R", "weighted": "W"})
 
+basename = os.path.basename(os.getcwd())
+
 plot(
     df,
-    by=["policy", "num_qubits"],
+    x="policy",
+    hue="num_qubits",
     show=SHOW,
-    filename="001-job_time-box-num_qubits",
+    filename="{}-job_time-box-num_qubits".format(basename),
 )
 plot(
     df,
-    by=["policy", "priority"],
+    x="policy",
+    hue="priority",
     show=SHOW,
-    filename="001-job_time-box-priority",
+    filename="{}-job_time-box-priority".format(basename),
 )
 plot(
     df,
-    by=["policy"],
+    x="policy",
+    hue=None,
     show=SHOW,
-    filename="001-job_time-box",
+    filename="{}-job_time-box".format(basename),
 )
 
 if SHOW:
