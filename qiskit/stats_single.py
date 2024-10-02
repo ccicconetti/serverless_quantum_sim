@@ -11,11 +11,19 @@ SHOW = bool(os.environ.get("SHOW", ""))
 
 
 def plot(
-    df, x: str, y: str, ylabel: str | None, hue: str | None, show: bool, filename: str
+    df,
+    x: str,
+    xlabel: str | None,
+    y: str,
+    ylabel: str | None,
+    hue: str | None,
+    show: bool,
+    filename: str,
 ):
     fig, ax = plt.subplots()
     sns.boxplot(df, x=x, y=y, hue=hue, ax=ax)
     ax.set_title("")
+    ax.set_xlabel(xlabel)
     ax.set_ylabel(ylabel)
     fig.suptitle("")
     if show:
@@ -30,12 +38,20 @@ pd.set_option("display.max_rows", None)
 pd.set_option("display.max_colwidth", None)
 df = pd.read_csv(DATASET, index_col=False)
 df = df.select_dtypes(include="number")
-print(df.describe())
+
+plot(
+    df.melt(id_vars="n_qubits", value_vars=["QUEUED", "INITIALIZING"]),
+    x="variable",
+    xlabel="",
+    y="value",
+    ylabel="Time (s)",
+    hue="n_qubits",
+    show=SHOW,
+    filename="{}-times".format(os.path.basename(os.getcwd())),
+)
+
 
 metrics = [
-    ("QUEUED", "Time (s)"),
-    ("INITIALIZING", "Time (s)"),
-    ("RUNNING", "Time (s)"),
     ("num_iterations", "Number of iterations"),
 ]
 
@@ -43,8 +59,9 @@ for ymetric, ylabel in metrics:
     plot(
         df,
         x="n_qubits",
+        xlabel="n_qubits",
         y=ymetric,
-        ylabel=ymetric,
+        ylabel=ylabel,
         hue=None,
         show=SHOW,
         filename="{}-{}".format(os.path.basename(os.getcwd()), ymetric),
