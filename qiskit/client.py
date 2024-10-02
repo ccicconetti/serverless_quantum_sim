@@ -20,6 +20,8 @@ OUTPUT_SERIES = "output_series.csv"
 
 # Options
 DRY = bool(os.environ.get("DRY", ""))
+MIN_QUBITS = int(os.environ.get("MIN_QUBITS", "4"))
+MAX_QUBITS = int(os.environ.get("MAX_QUBITS", "10"))
 
 
 def dump_data(
@@ -78,7 +80,7 @@ ibm_credentials = get_ibm_credentials()
 logging.info("IBM credentials: {}".format(ibm_credentials))
 
 # Get all the datasets
-datasets = get_datasets(min_qubits=4, max_qubits=10)
+datasets = get_datasets(min_qubits=MIN_QUBITS, max_qubits=MAX_QUBITS)
 
 if DRY:
     for dataset in datasets:
