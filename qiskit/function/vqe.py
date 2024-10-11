@@ -53,11 +53,14 @@ def build_callback(ansatz, hamiltonian, estimator, callback_dict):
 
         # Grab the current time
         current_time = time.perf_counter()
-        # Find the total time of the execute (after the 1st iteration)
+
+        # Find the total time spent outside of this callback
+        # (after the 1st iteration)
         if callback_dict["iters"] > 1:
-            delta = current_time - callback_dict["_prev_time"]
-            callback_dict["total_time"] += delta
-            callback_dict["exec_times"].append(delta)
+            delta_exec = current_time - callback_dict["_prev_time"]
+            callback_dict["total_time"] += delta_exec
+            callback_dict["exec_times"].append(delta_exec)
+
         # Set the previous time to the current time
         callback_dict["_prev_time"] = current_time
 
@@ -65,13 +68,10 @@ def build_callback(ansatz, hamiltonian, estimator, callback_dict):
         callback_dict["cost_history"].append(
             estimator.run([(ansatz, hamiltonian, current_vector)]).result()[0]
         )
-        # Grab the current time
-        current_time = time.perf_counter()
-        # Find the total time of the execute (after the 1st iteration)
-        if callback_dict["iters"] > 1:
-            delta = current_time - callback_dict["_prev_time"]
-            callback_dict["total_time"] += delta
-            callback_dict["cost_times"].append(delta)
+        # Measure the time to compute the cost 
+        delta_cost = current_time - time.perf_counter()
+        callback_dict["cost_times"].append(delta_cost)
+
         # Set the previous time to the current time
         callback_dict["_prev_time"] = current_time
 
