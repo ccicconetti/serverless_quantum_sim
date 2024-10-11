@@ -8,7 +8,7 @@ import seaborn as sns
 IMAGE_TYPE = os.environ.get("IMAGE_TYPE", "png")
 DATASET = os.environ.get("DATASET", "output_single.csv")
 SHOW = bool(os.environ.get("SHOW", ""))
-
+N_QUBITS = os.environ.get("N_QUBITS", "")
 
 def plot(
     df,
@@ -38,6 +38,11 @@ pd.set_option("display.max_rows", None)
 pd.set_option("display.max_colwidth", None)
 df = pd.read_csv(DATASET, index_col=False)
 df = df.select_dtypes(include="number")
+
+n_qubits = list(filter(None,N_QUBITS.strip().split(",")))
+n_qubits = [int(x) for x in n_qubits]
+if n_qubits != []:
+    df = df[df["n_qubits"].isin(n_qubits)]
 
 plot(
     df.melt(id_vars="n_qubits", value_vars=["QUEUED", "INITIALIZING"]),
