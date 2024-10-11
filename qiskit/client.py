@@ -49,10 +49,16 @@ def dump_data(
             )
         )
 
+    assert len(results["exec_times"]) == len(results["cost_times"])
+
     header = ""
     if not os.path.exists(OUTPUT_SERIES) or os.path.getsize(OUTPUT_SERIES) == 0:
         header = "dataset,n_qubits,timestamp,exec_time,cost_time\n"
-    assert len(results["exec_times"]) == len(results["cost_times"])
+
+    # skip the last pair of samples, which are not always meaningful
+    del results["exec_times"][-1]
+    del results["cost_times"][-1]
+
     with open(OUTPUT_SERIES, "a") as outfile:
         if header != "":
             outfile.write(header)
