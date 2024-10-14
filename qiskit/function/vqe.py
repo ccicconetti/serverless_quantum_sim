@@ -18,6 +18,10 @@ from qiskit_serverless import (
     save_result,
 )
 
+# Lists filled during the execution of the minimization process
+COSTS = []
+TIMES = []
+
 
 def build_callback(ansatz, hamiltonian, estimator, callback_dict):
     """Return callback function that uses Estimator instance,
@@ -64,22 +68,9 @@ def build_callback(ansatz, hamiltonian, estimator, callback_dict):
         # Set the previous time to the current time
         callback_dict["_prev_time"] = current_time
 
-        # Compute the value of the cost function at the current vector
-        callback_dict["cost_history"].append(
-            estimator.run([(ansatz, hamiltonian, current_vector)]).result()[0]
-        )
-        # Measure the time to compute the cost
-        # This is done only after the 1st iteration to obtain the same number of
-        # samples as exec_times
-        if callback_dict["iters"] > 1:
-            callback_dict["cost_times"].append(current_time - time.perf_counter())
-
-        # Set the previous time to the current time
-        callback_dict["_prev_time"] = current_time
-
         # Print to screen on single line
         print(
-            "{}".format(callback_dict["iters"]),
+            "({},{},{})".format(callback_dict["iters"], COSTS[-1], TIMES[-1]),
             end="\r",
             flush=True,
         )
@@ -99,19 +90,21 @@ def cost_func(params, ansatz, hamiltonian, estimator):
     Returns:
         float: Energy estimate
     """
+
+    current_time = time.perf_counter()
     energy = estimator.run([(ansatz, hamiltonian, params)]).result()[0].data.evs
+    COSTS.append(float(energy))
+    TIMES.append(time.perf_counter() - current_time)
     return energy
 
 
-def run_vqe(initial_parameters, ansatz, operator, estimator, method):
+def run_vqe(initial_parameters, ansatz, operator, estimator, method, maxiter):
     callback_dict = {
         "prev_vector": None,
         "iters": 0,
-        "cost_history": [],
         "total_time": 0,
-        "_prev_time": None,
         "exec_times": [],
-        "cost_times": [],
+        "_prev_time": None,
     }
     callback = build_callback(ansatz, operator, estimator, callback_dict)
     result = minimize(
@@ -120,6 +113,7 @@ def run_vqe(initial_parameters, ansatz, operator, estimator, method):
         args=(ansatz, operator, estimator),
         method=method,
         callback=callback,
+        options={"maxiter": maxiter},
     )
     return result, callback_dict
 
@@ -133,6 +127,7 @@ if __name__ == "__main__":
     ansatz = arguments.get("ansatz")
     operator = arguments.get("operator")
     method = arguments.get("method", "COBYLA")
+    maxiter = int(arguments.get("maxiter", "1000"))
     initial_parameters = arguments.get("initial_parameters")
     if service:
         backend = service.least_busy(operational=True, simulator=False)
@@ -164,6 +159,7 @@ if __name__ == "__main__":
                 operator=operator_isa,
                 estimator=estimator,
                 method=method,
+                maxiter=maxiter,
             )
     else:
         estimator = Estimator(backend=backend)
@@ -173,6 +169,7 @@ if __name__ == "__main__":
             operator=operator_isa,
             estimator=estimator,
             method=method,
+            maxiter=maxiter,
         )
 
     ts_cur = time.perf_counter()
@@ -210,8 +207,8 @@ if __name__ == "__main__":
             "optimal_value": vqe_result.fun,
             "optimizer_time": callback_dict.get("total_time", 0),
             "durations": durations,
-            "exec_times": callback_dict.get("exec_times", []),
-            "cost_times": callback_dict.get("cost_times", []),
+            "times": TIMES,
+            "costs": COSTS,
             "num_iterations": callback_dict.get("iters", 0),
         }
     )

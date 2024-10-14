@@ -44,7 +44,7 @@ def get_datasets(min_qubits: int, max_qubits: int):
     return datasets
 
 
-def prepare_input(dataset: str, ibm_credentials: dict | None):
+def prepare_input(dataset: str, maxiter: int, ibm_credentials: dict | None):
 
     service = None
     if ibm_credentials is not None:
@@ -70,6 +70,7 @@ def prepare_input(dataset: str, ibm_credentials: dict | None):
         "n_qubits": operator.num_qubits,
         "dataset": dataset,
         "service": service,
+        "maxiter": maxiter,
     }
 
     return input_arguments

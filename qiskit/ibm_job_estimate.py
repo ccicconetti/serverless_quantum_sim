@@ -18,7 +18,7 @@ OUTPUT = os.environ.get("OUTPUT", "ibm_job_estimate.csv")
 # Find a dataset with the right number of qubits
 datasets = get_datasets(min_qubits=NUM_QUBITS, max_qubits=NUM_QUBITS)
 assert datasets != []
-arguments = prepare_input(dataset_name(datasets[0]), ibm_credentials=None)
+arguments = prepare_input(dataset_name(datasets[0]), maxiter=1, ibm_credentials=None)
 
 # Check IBM credentials
 ibm_credentials = get_ibm_credentials()

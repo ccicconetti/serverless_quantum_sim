@@ -22,23 +22,41 @@ OUTPUT_SERIES = "output_series.csv"
 DRY = bool(os.environ.get("DRY", ""))
 MIN_QUBITS = int(os.environ.get("MIN_QUBITS", "4"))
 MAX_QUBITS = int(os.environ.get("MAX_QUBITS", "10"))
+NUM_RUNS = os.environ.get("NUM_RUNS", "")
+MAX_ITER = int(os.environ.get("MAX_ITER", "1000"))
 
 
 def dump_data(
     input_arguments: dict, timestamp: int, results: dict, status_durations: dict
 ):
+    assert len(results["times"]) == len(results["costs"])
+
+    # sometimes (but not always) there is one last spurious cost_func invocation
+    if len(results["times"]) != results["num_iterations"]:
+        logging.warning(
+            "num_iterations = {}, cost_func invocations = {}".format(
+                results["num_iterations"], len(results["times"])
+            )
+        )
+        results["num_iterations"] = len(results["times"])
+
     header = ""
     if not os.path.exists(OUTPUT_SINGLE) or os.path.getsize(OUTPUT_SINGLE) == 0:
         header = "dataset,n_qubits,timestamp,optimized_total,num_iterations,"
         header += ",".join(results["durations"].keys())
         header += ","
         header += ",".join(status_durations.keys())
+        header += ",avg_clas_iter_dur"
         header += "\n"
+
+    avg_clas_iter_dur = (
+        float(results["durations"]["run_vqe"]) - sum(results["times"])
+    ) / (float(results["num_iterations"]))
     with open(OUTPUT_SINGLE, "a") as outfile:
         if header != "":
             outfile.write(header)
         outfile.write(
-            "{},{},{},{},{},{},{}\n".format(
+            "{},{},{},{},{},{},{},{}\n".format(
                 input_arguments["dataset"],
                 input_arguments["n_qubits"],
                 timestamp,
@@ -46,30 +64,25 @@ def dump_data(
                 results["num_iterations"],
                 ",".join(str(x) for x in results["durations"].values()),
                 ",".join(str(x) for x in status_durations.values()),
+                avg_clas_iter_dur,
             )
         )
 
-    assert len(results["exec_times"]) == len(results["cost_times"])
-
     header = ""
     if not os.path.exists(OUTPUT_SERIES) or os.path.getsize(OUTPUT_SERIES) == 0:
-        header = "dataset,n_qubits,timestamp,exec_time,cost_time\n"
-
-    # skip the last pair of samples, which are not always meaningful
-    del results["exec_times"][-1]
-    del results["cost_times"][-1]
+        header = "dataset,n_qubits,timestamp,time,cost\n"
 
     with open(OUTPUT_SERIES, "a") as outfile:
         if header != "":
             outfile.write(header)
-        for exec_time, cost_time in zip(results["exec_times"], results["cost_times"]):
+        for time, cost in zip(results["times"], results["costs"]):
             outfile.write(
                 "{},{},{},{},{}\n".format(
                     input_arguments["dataset"],
                     input_arguments["n_qubits"],
                     timestamp,
-                    exec_time,
-                    cost_time,
+                    time,
+                    cost,
                 )
             )
 
@@ -85,8 +98,21 @@ logging.basicConfig(
 ibm_credentials = get_ibm_credentials()
 logging.info("IBM credentials: {}".format(ibm_credentials))
 
+# Log options
+logging.info("Options:")
+logging.info(f"OUTPUT_SINGLE = {OUTPUT_SINGLE}")
+logging.info(f"OUTPUT_SERIES = {OUTPUT_SERIES}")
+logging.info(f"DRY = {DRY}")
+logging.info(f"MIN_QUBITS = {MIN_QUBITS}")
+logging.info(f"MAX_QUBITS = {MAX_QUBITS}")
+logging.info(f"NUM_RUNS = {NUM_RUNS}")
+logging.info(f"MAX_ITER = {MAX_ITER}")
+
 # Get all the datasets
 datasets = get_datasets(min_qubits=MIN_QUBITS, max_qubits=MAX_QUBITS)
+
+if NUM_RUNS != "":
+    datasets = datasets[0 : int(NUM_RUNS)]
 
 if DRY:
     for dataset in datasets:
@@ -100,6 +126,12 @@ if ibm_credentials is None:
         host=os.environ.get("GATEWAY_HOST", "http://localhost:8000"),
     )
 else:
+    print(
+        "You are about to start an experiment on a real IBM backend, enter 'yes' to confirm"
+    )
+    res = input()
+    if res.lower() != "yes":
+        os._exit()
     serverless = IBMServerlessClient(token=ibm_credentials["TOKEN"])
 
 # Create and upload the VQE function
@@ -120,7 +152,9 @@ for dataset in datasets:
     timestamp = int(time.time())
 
     # Prepare the function arguments
-    input_arguments = prepare_input(dataset_name(dataset), ibm_credentials)
+    input_arguments = prepare_input(
+        dataset_name(dataset), maxiter=MAX_ITER, ibm_credentials=ibm_credentials
+    )
 
     logging.info("starting with input arguments: {}".format(input_arguments))
 
