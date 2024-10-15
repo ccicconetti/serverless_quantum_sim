@@ -31,15 +31,15 @@ def plot(
 pd.set_option("display.show_dimensions", False)
 df = pd.read_csv(DATASET)
 
-n_qubits = list(filter(None,N_QUBITS.strip().split(",")))
+n_qubits = list(filter(None, N_QUBITS.strip().split(",")))
 n_qubits = [int(x) for x in n_qubits]
 if n_qubits != []:
     df = df[df["n_qubits"].isin(n_qubits)]
 
 metrics = [
-    ("exec_time", "Quantum task execution time (ms)"),
-    ("cost_time", "Classical task execution time (ms)"),
+    ("time", "Quantum task execution time (ms)"),
 ]
+metrics = []
 for ymetric, ylabel in metrics:
     df[ymetric] = df[ymetric] * 1000.0
     plot(
@@ -51,6 +51,19 @@ for ymetric, ylabel in metrics:
         show=SHOW,
         filename="{}-{}".format(os.path.basename(os.getcwd()), ymetric),
     )
+
+grouped = df.groupby(["n_qubits", "timestamp"])["cost"]
+grouped = (grouped.max() - grouped.min()).to_frame()
+
+plot(
+    grouped,
+    x="n_qubits",
+    y="cost",
+    ylabel="Initial cost - final cost",
+    hue=None,
+    show=SHOW,
+    filename="{}-cost".format(os.path.basename(os.getcwd())),
+)
 
 if SHOW:
     input("Press any key to continue")

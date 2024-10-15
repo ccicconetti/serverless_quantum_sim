@@ -10,6 +10,7 @@ DATASET = os.environ.get("DATASET", "output_single.csv")
 SHOW = bool(os.environ.get("SHOW", ""))
 N_QUBITS = os.environ.get("N_QUBITS", "")
 
+
 def plot(
     df,
     x: str,
@@ -39,7 +40,7 @@ pd.set_option("display.max_colwidth", None)
 df = pd.read_csv(DATASET, index_col=False)
 df = df.select_dtypes(include="number")
 
-n_qubits = list(filter(None,N_QUBITS.strip().split(",")))
+n_qubits = list(filter(None, N_QUBITS.strip().split(",")))
 n_qubits = [int(x) for x in n_qubits]
 if n_qubits != []:
     df = df[df["n_qubits"].isin(n_qubits)]
@@ -58,7 +59,12 @@ plot(
 
 metrics = [
     ("num_iterations", "Number of iterations"),
+    ("avg_clas_iter_dur", "Classical task average execution time (ms)"),
+    ("run_transpile", "Transpilation time (ms)"),
 ]
+
+df["avg_clas_iter_dur"] = df["avg_clas_iter_dur"] * 1000.0
+df["run_transpile"] = df["run_transpile"] * 1000.0
 
 for ymetric, ylabel in metrics:
     plot(
