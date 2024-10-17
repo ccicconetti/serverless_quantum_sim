@@ -28,6 +28,7 @@ pd.set_option("display.max_columns", None)
 pd.set_option("display.max_colwidth", None)
 df = pd.read_csv(DATASET)
 df = df.rename(columns={"num_serverless_workers": "C"})
+df = df.rename(columns={"num_quantum_computers": "Q"})
 df = df.rename(columns={"job_interarrival": "interarrival"})
 
 basename = os.path.basename(os.getcwd())
@@ -35,7 +36,7 @@ basename = os.path.basename(os.getcwd())
 plot(
     df,
     x="interarrival",
-    hue="C",
+    hue="Q",
     show=SHOW,
     filename="{}-job_time-box".format(basename),
 )

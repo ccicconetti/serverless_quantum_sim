@@ -31,6 +31,7 @@ pd.set_option("display.max_columns", None)
 pd.set_option("display.max_colwidth", None)
 df = pd.read_csv(DATASET)
 df = df.rename(columns={"num_serverless_workers": "C"})
+df = df.rename(columns={"num_quantum_computers": "Q"})
 df = df.rename(columns={"job_interarrival": "interarrival"})
 df["drop_prob"] = (
     100 * df["num_job_dropped"] / (df["num_job_accepted"] + df["num_job_dropped"])
