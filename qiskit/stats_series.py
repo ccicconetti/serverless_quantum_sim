@@ -39,7 +39,6 @@ if n_qubits != []:
 metrics = [
     ("time", "Quantum task execution time (ms)"),
 ]
-metrics = []
 for ymetric, ylabel in metrics:
     df[ymetric] = df[ymetric] * 1000.0
     plot(
@@ -53,13 +52,13 @@ for ymetric, ylabel in metrics:
     )
 
 grouped = df.groupby(["n_qubits", "timestamp"])["cost"]
-grouped = (grouped.max() - grouped.min()).to_frame()
+grouped = ((grouped.max() - grouped.min()) / grouped.max()).to_frame()
 
 plot(
     grouped,
     x="n_qubits",
     y="cost",
-    ylabel="Initial cost - final cost",
+    ylabel="Delta / initial cost",
     hue=None,
     show=SHOW,
     filename="{}-cost".format(os.path.basename(os.getcwd())),
