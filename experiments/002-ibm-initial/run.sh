@@ -21,7 +21,7 @@ for quantum_schedule_policy in $quantum_schedule_policies ; do
     --priorities \"1;2;4\" \
     --concurrency 20 \
     --seed-init 0 \
-    --seed-end 20 \
+    --seed-end 100 \
     --target-qc-dur-file ibm_job_estimate.csv \
     --append
     "
