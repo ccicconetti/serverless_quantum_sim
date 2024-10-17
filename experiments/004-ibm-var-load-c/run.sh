@@ -1,7 +1,7 @@
 #!/bin/bash
 
 num_serverless_workers_values="1 2 3 4 5 6"
-job_interarrival_values="15 30 45 60 75 90"
+job_interarrival_values="150 300 450 600 750 900"
 
 bin=../../target/release/serverless_quantum_sim
 
@@ -13,9 +13,10 @@ for job_interarrival in $job_interarrival_values ; do
   cmd="$bin \
     --duration $((24*3600)) \
     --warmup-period $((3600)) \
+    --worker-capacity 10000000 \
     --job-interarrival $job_interarrival \
     --num-serverless-workers $num_serverless_workers \
-    --num-quantum-computers 100 \
+    --num-quantum-computers 4 \
     --max-classical-tasks 40 \
     --max-quantum-tasks 40 \
     --quantum-schedule-policy random \
