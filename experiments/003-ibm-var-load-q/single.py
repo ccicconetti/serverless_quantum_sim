@@ -18,6 +18,7 @@ def plot(
     sns.heatmap(
         table, cmap="coolwarm", annot=True, fmt="0.0f", cbar_kws={"label": hue_label}
     )
+    ax.set_ylabel("Load (jobs/hour)")
     ax.set_title("")
     fig.suptitle("")
     if show:
@@ -38,7 +39,7 @@ df["drop_prob"] = (
 )
 df["quantum_tasks"] = df["active_quantum_tasks"] + df["pending_quantum_tasks"]
 df["job_rate"] = 3600 * df["num_job_accepted"] / df["duration"]
-
+df["load"] = 3600 / df["interarrival"]
 
 metrics = [
     ("drop_prob", "Drop probability (%)"),
@@ -49,7 +50,7 @@ metrics = [
 for hue, hue_label in metrics:
     plot(
         df,
-        x="interarrival",
+        x="load",
         y="Q",
         hue_label=hue_label,
         hue=hue,

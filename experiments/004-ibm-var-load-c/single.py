@@ -11,13 +11,20 @@ SHOW = bool(os.environ.get("SHOW", ""))
 
 
 def plot(
-    df, x: str, y: str, hue: str | None, hue_label: str, show: bool, filename: str
+    df,
+    x: str,
+    y: str,
+    hue: str | None,
+    hue_label: str,
+    show: bool,
+    filename: str,
 ):
     fig, ax = plt.subplots()
     table = pd.pivot_table(df, index=x, columns=y, values=hue)
     sns.heatmap(
         table, cmap="coolwarm", annot=True, fmt="0.0f", cbar_kws={"label": hue_label}
     )
+    ax.set_ylabel("Load (jobs/hour)")
     ax.set_title("")
     fig.suptitle("")
     if show:
@@ -38,6 +45,7 @@ df["drop_prob"] = (
 )
 df["quantum_tasks"] = df["active_quantum_tasks"] + df["pending_quantum_tasks"]
 df["job_rate"] = 3600 * df["num_job_accepted"] / df["duration"]
+df["load"] = 3600 / df["interarrival"]
 
 
 metrics = [
@@ -49,7 +57,7 @@ metrics = [
 for hue, hue_label in metrics:
     plot(
         df,
-        x="interarrival",
+        x="load",
         y="C",
         hue_label=hue_label,
         hue=hue,
