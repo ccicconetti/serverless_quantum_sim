@@ -14,6 +14,7 @@ from prepare_input import prepare_input, get_datasets, dataset_name
 
 NUM_QUBITS = int(os.environ.get("NUM_QUBITS", "4"))
 OUTPUT = os.environ.get("OUTPUT", "ibm_job_estimate.csv")
+BACKEND = os.environ.get("BACKEND")
 
 # Find a dataset with the right number of qubits
 datasets = get_datasets(min_qubits=NUM_QUBITS, max_qubits=NUM_QUBITS)
@@ -30,7 +31,10 @@ service = QiskitRuntimeService(
 )
 
 ansatz = EfficientSU2(NUM_QUBITS)
-backend = service.least_busy(operational=True, simulator=False)
+if BACKEND is None:
+    backend = service.least_busy(operational=True, simulator=False)
+else:
+    backend = service.backend(name=BACKEND)
 backend_name = backend.name
 pm = generate_preset_pass_manager(backend=backend, optimization_level=1)
 ansatz_isa = pm.run(ansatz)
