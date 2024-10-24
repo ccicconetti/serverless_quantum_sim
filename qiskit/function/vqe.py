@@ -152,7 +152,7 @@ if __name__ == "__main__":
 
     if service:
         with Session(service=service, backend=backend) as session:
-            estimator = Estimator(session=session)
+            estimator = Estimator(mode=session)
             vqe_result, callback_dict = run_vqe(
                 initial_parameters=initial_parameters,
                 ansatz=ansatz_isa,
@@ -186,7 +186,7 @@ if __name__ == "__main__":
 
     if service:
         with Session(service=service, backend=backend) as session:
-            sampler = Sampler(session=session)
+            sampler = Sampler(mode=session)
             samp_dist = (
                 sampler.run([qc_isa], shots=int(1e4)).result()[0].data.meas.get_counts()
             )

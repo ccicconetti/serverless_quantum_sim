@@ -166,17 +166,26 @@ for dataset in datasets:
     states = []
 
     while True:
-        status = job.status()
-        if status not in timestamps:
-            logging.info(status)
-            timestamps[status] = datetime.datetime.now()
-            states.append(status)
-        if status == "DONE":
-            break
-        elif status == "ERROR":
-            logging.error(job.logs())
-            raise RuntimeError("the job could not be run")
-        time.sleep(0.01)
+        try:
+            status = job.status()
+            if status not in timestamps:
+                logging.info(status)
+                timestamps[status] = datetime.datetime.now()
+                states.append(status)
+            if status == "DONE":
+                break
+            elif status == "ERROR":
+                logging.error(job.logs())
+                raise RuntimeError("the job could not be run")
+        except Exception as err:
+            logging.error(err)
+
+        if ibm_credentials is None:
+            time.sleep(0.01)
+        else:
+            time.sleep(5)
+
+    assert job.in_terminal_state() == True
 
     logging.info("dumping data")
 
