@@ -224,7 +224,17 @@ async fn main() -> anyhow::Result<()> {
     }
 
     // save output to files
-    assert!(!outputs.is_empty());
+    anyhow::ensure!(!outputs.is_empty(), "no simulation output has been found");
+
+    // create the path to write output files, if needed
+    let test_filename = format!("{}test.csv", args.output_path);
+    let test_path = std::path::Path::new(&test_filename);
+    let mut ancestors = test_path.ancestors();
+    ancestors.next();
+    let base_dir = ancestors.next().unwrap();
+    std::fs::create_dir_all(base_dir)?;
+
+    // write simulation output
     let mut single_file = open_output_file(
         &args.output_path,
         "single.csv",

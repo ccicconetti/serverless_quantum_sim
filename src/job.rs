@@ -120,11 +120,31 @@ impl JobFactory {
         seed: u64,
         target_dur_qc_avg: &std::collections::BTreeMap<u16, f64>,
     ) -> anyhow::Result<Self> {
-        let pre_values = Self::read_from_file("input/pre.csv", SECOND as f64)?;
-        let iter_values = Self::read_from_file("input/cost_time.csv", SECOND as f64)?;
-        let post_values = Self::read_from_file("input/post.csv", SECOND as f64)?;
-        let mut dur_qc_values = Self::read_from_file("input/exec_time.csv", SECOND as f64)?;
-        let num_iterations_values = Self::read_from_file("input/num_iterations.csv", 1_f64)?;
+        let input_files = std::collections::HashMap::from([
+            ("pre", "input/pre.csv"),
+            ("iter", "input/cost_time.csv"),
+            ("post", "input/post.csv"),
+            ("dur_qc_values", "input/exec_time.csv"),
+            ("num_iterations", "input/num_iterations.csv"),
+        ]);
+
+        // Check that all the required input files exist.
+        let mut non_existing_files = vec![];
+        for input_filename in input_files.values() {
+            if !std::path::Path::new(input_filename).exists() {
+                non_existing_files.push(input_filename.to_string());
+            }
+        }
+        anyhow::ensure!(
+            non_existing_files.is_empty(),
+            format!("missing input files: {}", non_existing_files.join(","))
+        );
+
+        let pre_values = Self::read_from_file(input_files["pre"], SECOND as f64)?;
+        let iter_values = Self::read_from_file(input_files["iter"], SECOND as f64)?;
+        let post_values = Self::read_from_file(input_files["post"], SECOND as f64)?;
+        let mut dur_qc_values = Self::read_from_file(input_files["dur_qc_values"], SECOND as f64)?;
+        let num_iterations_values = Self::read_from_file(input_files["num_iterations"], 1_f64)?;
 
         let dur_qc_stats = Self::single_trace_stats(1.0 / SECOND as f64, &dur_qc_values);
         for (num_qubits, values) in &mut dur_qc_values {
